@@ -40,6 +40,14 @@ export const RESEARCH: ResearchItem[] = [
   { id: 'r-mouse', name: 'Zippy Mouse', category: 'coaster', cost: 380, unlocks: 'wild-mouse' },
   { id: 'r-wood', name: 'Timber Twister', category: 'coaster', cost: 520, unlocks: 'wooden-coaster' },
   { id: 'r-inverted', name: 'Skyhanger', category: 'coaster', cost: 700, unlocks: 'inverted-coaster' },
+  { id: 'r-hotdog', name: 'Hot Dog Cart', category: 'shops', cost: 200, unlocks: 'hot-dog-cart' },
+  { id: 'r-bumper', name: 'Bumper Cars', category: 'gentle', cost: 260, unlocks: 'bumper-cars' },
+  { id: 'r-floss', name: 'Candy Floss Cart', category: 'shops', cost: 220, unlocks: 'candy-floss' },
+  { id: 'r-galleon', name: 'Swinging Galleon', category: 'thrill', cost: 360, unlocks: 'swinging-galleon' },
+  { id: 'r-ghost', name: 'Ghost Manor', category: 'gentle', cost: 400, unlocks: 'ghost-manor' },
+  { id: 'r-pizza', name: 'Pizza Slice Stand', category: 'shops', cost: 380, unlocks: 'pizza-stand' },
+  { id: 'r-smoothie', name: 'Smoothie Bar', category: 'shops', cost: 420, unlocks: 'smoothie-bar' },
+  { id: 'r-whirlwind', name: 'Whirlwind', category: 'thrill', cost: 560, unlocks: 'whirlwind' },
 ];
 
 /** Available from the start in a fresh sandbox park. */
