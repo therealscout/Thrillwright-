@@ -6,6 +6,7 @@ import { checkPlacement, setBlocked, type Building, type Facing } from '../core/
 import { buildingType } from '../core/catalog';
 import { checkDesign, checkEntrance, type CoasterInfo } from '../core/coaster';
 import { STARTING_CASH, WAGES } from '../core/costs';
+import { suggestedTicket } from '../core/pricing';
 import type { TileCoord } from '../core/grid';
 import { cloneTerrain, PathItem, restoreTerrain, type Terrain } from '../core/terrain';
 import { buyLand, moveLand, moveWater, placeItem, placePath, removePath, type EditResult } from '../core/terrain-edit';
@@ -243,7 +244,9 @@ export class Park {
       x: info.start.tx,
       y: info.start.ty,
       facing: info.start.dir,
-      price: buildingType('steel-coaster').price,
+      // Start at a ticket guests will pay for this design; a dull ride at the
+      // default price would stand empty.
+      price: suggestedTicket(info.ratings.excitement),
       open: true,
       coaster: info,
     };
