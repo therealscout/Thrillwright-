@@ -11,7 +11,10 @@ import {
 } from '../core/grid';
 import { tileIndex, tileNoise, type Terrain } from '../core/terrain';
 import type { Park } from '../game/park';
+import type { Building } from '../core/buildings';
 import type { GuestSnapshot } from '../sim/sim-client';
+import type { BuildingStats } from '../sim/sim-core';
+import { BuildingLayer } from './building-layer';
 import { GuestLayer } from './guest-layer';
 import { palette } from './palette';
 import {
@@ -63,7 +66,9 @@ export class GameRenderer {
   private readonly treeSpots: Array<[number, number, number]>;
   private readonly gate: THREE.Group;
   private readonly guests = new GuestLayer();
+  private readonly buildingLayer = new BuildingLayer();
   private guestSource: (() => GuestSnapshot | null) | null = null;
+  private buildingStatsSource: (() => readonly BuildingStats[]) | null = null;
 
   private rotation: Rotation = 0;
   private yaw = rotationYaw(0);
@@ -149,6 +154,7 @@ export class GameRenderer {
     this.gate.position.set(entrance.tx, 0, entrance.ty + 0.5);
     this.scene.add(this.gate);
     this.scene.add(this.guests.mesh);
+    this.scene.add(this.buildingLayer.group);
 
     this.bindInput();
     this.resize();
@@ -170,6 +176,16 @@ export class GameRenderer {
   /** Where to read guest positions from each frame (the simulation client). */
   setGuestSource(source: () => GuestSnapshot | null): void {
     this.guestSource = source;
+  }
+
+  /** Where to read ride running state from each frame. */
+  setBuildingStatsSource(source: () => readonly BuildingStats[]): void {
+    this.buildingStatsSource = source;
+  }
+
+  /** Preview of a building being placed, or null. */
+  setGhost(ghost: { type: string; x: number; y: number; facing: Building['facing']; valid: boolean } | null): void {
+    this.buildingLayer.setGhost(ghost, this.park.terrain);
   }
 
   rotate(direction: 1 | -1): void {
@@ -209,6 +225,7 @@ export class GameRenderer {
     swap(this.water, buildWaterGeometry(t));
     swap(this.paths, buildPathGeometry(t));
     this.placeTrees(t);
+    this.buildingLayer.sync(this.park.buildings, t);
     this.gate.position.y = tileCentreY(t, Math.floor(this.gate.position.x), Math.floor(this.gate.position.z));
     this.builtVersion = this.park.version;
   }
@@ -223,7 +240,7 @@ export class GameRenderer {
     let n = 0;
     for (const [tx, ty, r] of this.treeSpots) {
       const k = tileIndex(t, tx, ty);
-      if (t.paths[k] || t.water[k]) continue;
+      if (t.paths[k] || t.water[k] || t.blocked[k]) continue;
       const scale = 0.75 + r * 0.6;
       pos.set(tx + 0.3 + r * 0.4, tileCentreY(t, tx, ty), ty + 0.3 + (1 - r) * 0.4);
       q.setFromAxisAngle(up, r * Math.PI * 2);
@@ -423,6 +440,7 @@ export class GameRenderer {
     }
 
     this.guests.update(this.guestSource?.() ?? null, now);
+    this.buildingLayer.update(dt, this.buildingStatsSource?.() ?? []);
     this.renderer.render(this.scene, this.camera);
 
     this.frames++;

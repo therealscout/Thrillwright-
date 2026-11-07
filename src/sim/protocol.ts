@@ -1,11 +1,12 @@
 /** Messages between the main thread and the simulation worker. */
-import type { SimConfig, SimStats } from './sim-core';
+import type { SimBuilding, SimConfig, SimStats } from './sim-core';
 
 export interface WorldData {
   width: number;
   height: number;
   corners: Uint8Array;
   paths: Uint8Array;
+  buildings: SimBuilding[];
 }
 
 export type ToWorker =

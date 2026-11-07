@@ -43,15 +43,22 @@ function isOwned(t: Terrain, tx: number, ty: number): boolean {
   return t.owned[tileIndex(t, tx, ty)] === 1;
 }
 
-/** A corner may move only if every tile touching it is owned. */
-function cornerEditable(t: Terrain, cx: number, cy: number): boolean {
+/** Why a corner can't move, or null if it can. */
+function cornerLock(t: Terrain, cx: number, cy: number): 'unowned' | 'building' | null {
+  let lock: 'unowned' | 'building' | null = null;
   for (let ty = cy - 1; ty <= cy; ty++) {
     for (let tx = cx - 1; tx <= cx; tx++) {
       if (tx < 0 || ty < 0 || tx >= t.width || ty >= t.height) continue;
-      if (!isOwned(t, tx, ty)) return false;
+      if (t.blocked[tileIndex(t, tx, ty)]) lock = 'building';
+      else if (!isOwned(t, tx, ty) && !lock) lock = 'unowned';
     }
   }
-  return true;
+  return lock;
+}
+
+/** A corner may move only if every tile touching it is owned and free of buildings. */
+function cornerEditable(t: Terrain, cx: number, cy: number): boolean {
+  return cornerLock(t, cx, cy) === null;
 }
 
 /**
@@ -74,7 +81,10 @@ export function moveLand(t: Terrain, tiles: TileCoord[], direction: 1 | -1, budg
   }
   const stride = t.width + 1;
   const editable = [...brush].filter((i) => cornerEditable(t, i % stride, Math.floor(i / stride)));
-  if (editable.length === 0) return fail("You can't reshape the edge of your land.");
+  if (editable.length === 0) {
+    const underBuilding = [...brush].some((i) => cornerLock(t, i % stride, Math.floor(i / stride)) === 'building');
+    return fail(underBuilding ? 'Remove the ride or stall first.' : "You can't reshape the edge of your land.");
+  }
 
   const heights = editable.map((i) => t.corners[i] as number);
   const target = direction > 0 ? Math.min(...heights) + 1 : Math.max(...heights) - 1;
@@ -104,7 +114,9 @@ export function moveLand(t: Terrain, tiles: TileCoord[], direction: 1 | -1, budg
       const nh = next[j] as number;
       const wanted = direction > 0 ? Math.max(nh, h - MAX_SLOPE) : Math.min(nh, h + MAX_SLOPE);
       if (wanted === nh) continue;
-      if (!cornerEditable(t, nx, ny)) return fail('That would reshape land you don\'t own.');
+      const lock = cornerLock(t, nx, ny);
+      if (lock === 'building') return fail('That would reshape the ground under a ride or stall.');
+      if (lock) return fail("That would reshape land you don't own.");
       next[j] = wanted;
       queue.push(j);
     }
@@ -149,6 +161,7 @@ export function moveWater(t: Terrain, tiles: TileCoord[], direction: 1 | -1, bud
     const value = level > tileMinHeight(t, tx, ty) ? level : 0;
     if (value === t.water[k]) continue;
     if (value > 0 && t.paths[k]) return fail('That would flood a path.');
+    if (value > 0 && t.blocked[k]) return fail('That would flood a ride or stall.');
     changes.push([k, value]);
   }
   if (changes.length === 0) return fail('Nothing to change here.');
@@ -166,6 +179,7 @@ export function placePath(t: Terrain, tiles: TileCoord[], budget: number): EditR
     const k = tileIndex(t, tx, ty);
     if (t.paths[k]) continue;
     if (!isOwned(t, tx, ty)) reason = "You don't own this land.";
+    else if (t.blocked[k]) reason = 'A ride or stall is in the way.';
     else if (isUnderwater(t, tx, ty)) reason = "Paths can't go underwater.";
     else if (!isPathable(t, tx, ty)) reason = 'Paths need flat ground or a gentle slope.';
     else targets.push(k);

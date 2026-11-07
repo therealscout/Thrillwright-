@@ -56,3 +56,30 @@ test('performance test fills the park with thousands of guests', async ({ page }
   await expect(page.getByTestId('perf-tick')).toHaveText(/^\d\.\d\d ms per tick$/);
   expect(errors).toEqual([]);
 });
+
+test('building a stall from the menu and inspecting it', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Got it' }).click();
+  await page.locator('[data-tool="build"]').click();
+  await expect(page.getByTestId('build-menu')).toBeVisible();
+  await page.locator('[data-build="restrooms"]').click();
+  await expect(page.getByTestId('hint')).toContainText('Restrooms');
+
+  // The view starts centred just past the end of the entrance path.
+  const box = page.locator('#game');
+  const size = (await box.boundingBox())!;
+  await page.mouse.move(size.width / 2, size.height / 2);
+  await page.mouse.click(size.width / 2, size.height / 2);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { thrillwright: { park: { buildings: unknown[] } } }).thrillwright.park.buildings.length)).toBe(1);
+  await expect(page.getByTestId('cash')).toHaveText('$19,600');
+
+  // Inspect it with the Look tool.
+  await page.keyboard.press('Escape');
+  await page.mouse.click(size.width / 2, size.height / 2);
+  await expect(page.getByTestId('building-info')).toContainText('Restrooms');
+  expect(errors).toEqual([]);
+});

@@ -2,10 +2,12 @@
  * Main-thread side of the simulation: starts the worker, keeps it in sync
  * with park edits, and holds the latest guest snapshot for the renderer.
  */
+import { accessTile } from '../core/buildings';
+import { buildingType } from '../core/catalog';
 import { tileIndex } from '../core/terrain';
 import type { Park } from '../game/park';
 import type { FromWorker, ToWorker, WorldData } from './protocol';
-import type { SimConfig, SimStats } from './sim-core';
+import { EMPTY_AVERAGES, type SimConfig, type SimStats } from './sim-core';
 
 export interface GuestSnapshot {
   data: Float32Array;
@@ -19,7 +21,7 @@ export class SimClient {
   private current: GuestSnapshot | null = null;
   private syncedVersion: number;
   private config: SimConfig;
-  private lastStats: SimStats = { guests: 0, arrived: 0, left: 0, tick: 0, tickMs: 0 };
+  private lastStats: SimStats = { guests: 0, arrived: 0, left: 0, tick: 0, tickMs: 0, income: 0, averages: EMPTY_AVERAGES, buildings: [] };
   private readonly listeners = new Set<(s: SimStats) => void>();
   private lastEmit = 0;
 
@@ -85,7 +87,25 @@ export class SimClient {
         if (!t.owned[k]) paths[k] = 0;
       }
     }
-    return { width: t.width, height: t.height, corners: t.corners.slice(), paths };
+    const buildings = this.park.buildings.map((b) => {
+      const type = buildingType(b.type);
+      const a = accessTile(b);
+      return {
+        id: b.id,
+        kind: type.kind,
+        ax: a.tx,
+        ay: a.ty,
+        price: b.price,
+        open: b.open,
+        excitement: type.excitement ?? 0,
+        intensity: type.intensity ?? 0,
+        nausea: type.nausea ?? 0,
+        capacity: type.capacity ?? 0,
+        cycle: type.cycle ?? 0,
+        satisfies: type.satisfies ?? 0,
+      };
+    });
+    return { width: t.width, height: t.height, corners: t.corners.slice(), paths, buildings };
   }
 
   private receive(msg: FromWorker): void {
@@ -94,6 +114,7 @@ export class SimClient {
     this.current = { data: new Float32Array(msg.buffer), count: msg.count, receivedAt: performance.now() };
     if (previous) this.send({ type: 'recycle', buffer: previous.data.buffer as ArrayBuffer }, [previous.data.buffer as ArrayBuffer]);
     this.lastStats = msg.stats;
+    this.park.earn(msg.stats.income);
     const now = performance.now();
     if (now - this.lastEmit > 250) {
       this.lastEmit = now;

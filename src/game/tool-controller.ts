@@ -2,6 +2,8 @@
  * Connects pointer input to park edits: which tool is active, the brush
  * size, drag strokes, undo/redo and feedback messages.
  */
+import { accessTile, buildingAt, checkPlacement, footprint, originFor, type Facing } from '../core/buildings';
+import { buildingType } from '../core/catalog';
 import type { TileCoord } from '../core/grid';
 import { tileIndex } from '../core/terrain';
 import { brushTiles } from '../core/terrain-edit';
@@ -26,6 +28,7 @@ export const TOOLS: ToolInfo[] = [
   { id: 'path', label: 'Path', hint: 'Click and drag to lay footpath', key: '5', paints: true, usesBrush: true },
   { id: 'remove-path', label: 'Remove path', hint: 'Click and drag to remove footpath', key: '6', paints: true, usesBrush: true },
   { id: 'buy-land', label: 'Buy land', hint: 'Click and drag to buy land next to your park', key: '7', paints: true, usesBrush: true },
+  { id: 'build', label: 'Build', hint: 'Click to place. R rotates the entrance; face it onto a path', key: 'b', paints: false, usesBrush: false },
 ];
 
 export const BRUSH_SIZES = [1, 3, 5, 7] as const;
@@ -37,11 +40,17 @@ export interface ToolState {
   canUndo: boolean;
   canRedo: boolean;
   /** Last feedback, with an id so the UI can tell repeats apart. */
-  message: { text: string; id: number } | null;
+  message: { text: string; id: number; tone: 'error' | 'info' } | null;
+  /** Ride or stall chosen for the Build tool. */
+  buildType: string | null;
+  facing: Facing;
+  /** Building picked with the Look tool, for the info window. */
+  selected: number | null;
 }
 
 export interface BrushView {
   setBrush(tiles: TileCoord[], valid: boolean): void;
+  setGhost?(ghost: { type: string; x: number; y: number; facing: Facing; valid: boolean } | null): void;
 }
 
 export class ToolController {
@@ -52,13 +61,18 @@ export class ToolController {
   private lastPainted = '';
   private message: ToolState['message'] = null;
   private messageId = 0;
+  private buildType: string | null = null;
+  private facing: Facing = 2;
+  private selected: number | null = null;
   private readonly listeners = new Set<(s: ToolState) => void>();
 
   constructor(private readonly park: Park, private readonly view: BrushView) {
     park.onChange(() => {
+      if (this.selected !== null && !park.buildings.some((b) => b.id === this.selected)) this.selected = null;
       this.refreshBrush();
       this.emit();
     });
+    park.onCash(() => this.emit());
   }
 
   get state(): ToolState {
@@ -69,6 +83,9 @@ export class ToolController {
       canUndo: this.park.canUndo,
       canRedo: this.park.canRedo,
       message: this.message,
+      buildType: this.buildType,
+      facing: this.facing,
+      selected: this.selected,
     };
   }
 
@@ -79,8 +96,32 @@ export class ToolController {
   }
 
   setTool(tool: ToolId): void {
+    if (tool === 'build' && !this.buildType) {
+      this.say('Pick something to build from the Build menu.', 'info');
+      return;
+    }
     this.tool = tool;
     this.refreshBrush();
+    this.emit();
+  }
+
+  /** Choose a ride or stall and switch to the Build tool. */
+  setBuildType(type: string): void {
+    this.buildType = type;
+    this.tool = 'build';
+    this.refreshBrush();
+    this.emit();
+  }
+
+  /** Turn the entrance of the building being placed a quarter turn. */
+  rotateFacing(): void {
+    this.facing = ((this.facing + 1) % 4) as Facing;
+    this.refreshBrush();
+    this.emit();
+  }
+
+  select(id: number | null): void {
+    this.selected = id;
     this.emit();
   }
 
@@ -101,7 +142,11 @@ export class ToolController {
   /** Handle a pointer event from the map. */
   pointer(kind: 'down' | 'move' | 'up', tile: TileCoord | null): void {
     this.hovered = tile;
-    if (kind === 'down' && tile && this.tool !== 'inspect') {
+    if (kind === 'down' && tile && this.tool === 'inspect') {
+      this.select(buildingAt(this.park.buildings, tile)?.id ?? null);
+    } else if (kind === 'down' && tile && this.tool === 'build') {
+      this.place(tile);
+    } else if (kind === 'down' && tile && this.tool !== 'inspect') {
       this.dragging = true;
       this.park.beginStroke();
       this.lastPainted = '';
@@ -129,6 +174,14 @@ export class ToolController {
       return true;
     }
     if (ctrl) return false;
+    if (k === 'r' && this.tool === 'build') {
+      this.rotateFacing();
+      return true;
+    }
+    if (k === 'escape' && this.selected !== null && this.tool === 'inspect') {
+      this.select(null);
+      return true;
+    }
     const tool = TOOLS.find((t) => t.key.toLowerCase() === k);
     if (tool) {
       this.setTool(tool.id);
@@ -147,6 +200,20 @@ export class ToolController {
     return TOOLS.find((t) => t.id === this.tool) as ToolInfo;
   }
 
+  private place(tile: TileCoord): void {
+    if (!this.buildType) return;
+    const type = buildingType(this.buildType);
+    const origin = originFor(type, tile);
+    const result = this.park.placeBuilding(this.buildType, origin, this.facing);
+    if (!result.ok) {
+      if (result.reason) this.say(result.reason);
+    } else if (!result.connected) {
+      this.say(`${type.name} built. Connect a path to its entrance.`, 'info');
+    } else {
+      this.say(`${type.name} built.`, 'info');
+    }
+  }
+
   private tilesAt(tile: TileCoord): TileCoord[] {
     const { width, height } = this.park.terrain;
     return brushTiles(tile, this.info().usesBrush ? this.brushSize : 1, width, height);
@@ -161,8 +228,22 @@ export class ToolController {
   }
 
   private refreshBrush(): void {
+    if (this.tool !== 'build' || !this.hovered) this.view.setGhost?.(null);
     if (!this.hovered || this.tool === 'inspect') {
       this.view.setBrush([], true);
+      return;
+    }
+    if (this.tool === 'build' && this.buildType) {
+      const type = buildingType(this.buildType);
+      const o = originFor(type, this.hovered);
+      const candidate = { type: this.buildType, x: o.tx, y: o.ty, facing: this.facing };
+      const valid = checkPlacement(this.park.terrain, candidate).ok && type.cost <= this.park.cash;
+      const { width, height } = this.park.terrain;
+      const tiles = [...footprint(candidate), accessTile(candidate)].filter(
+        ({ tx, ty }) => tx >= 0 && ty >= 0 && tx < width && ty < height,
+      );
+      this.view.setBrush(tiles, valid);
+      this.view.setGhost?.({ ...candidate, valid });
       return;
     }
     const tiles = this.tilesAt(this.hovered);
@@ -174,8 +255,8 @@ export class ToolController {
     this.view.setBrush(tiles, valid);
   }
 
-  private say(text: string): void {
-    this.message = { text, id: ++this.messageId };
+  private say(text: string, tone: 'error' | 'info' = 'error'): void {
+    this.message = { text, id: ++this.messageId, tone };
     this.emit();
   }
 

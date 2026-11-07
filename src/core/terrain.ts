@@ -32,6 +32,8 @@ export interface Terrain {
   readonly paths: Uint8Array;
   /** 1 where the park owns the land and may build. */
   readonly owned: Uint8Array;
+  /** 1 where a ride or stall stands; the ground there can't be edited. */
+  readonly blocked: Uint8Array;
 }
 
 export function createTerrain(width: number, height: number): Terrain {
@@ -45,6 +47,7 @@ export function createTerrain(width: number, height: number): Terrain {
     surfaces: new Uint8Array(tiles),
     paths: new Uint8Array(tiles),
     owned: new Uint8Array(tiles),
+    blocked: new Uint8Array(tiles),
   };
 }
 
@@ -114,6 +117,7 @@ export function cloneTerrain(t: Terrain): Terrain {
     surfaces: t.surfaces.slice(),
     paths: t.paths.slice(),
     owned: t.owned.slice(),
+    blocked: t.blocked.slice(),
   };
 }
 
@@ -124,4 +128,5 @@ export function restoreTerrain(target: Terrain, source: Terrain): void {
   target.surfaces.set(source.surfaces);
   target.paths.set(source.paths);
   target.owned.set(source.owned);
+  target.blocked.set(source.blocked);
 }

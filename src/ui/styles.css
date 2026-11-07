@@ -117,18 +117,34 @@ button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px;
   max-width: 100%;
 }
 
-.guests {
+button.guests {
+  height: auto;
+  min-width: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
   font-variant-numeric: tabular-nums;
   color: var(--ui-muted);
   padding-left: 12px;
   border-left: 1px solid var(--ui-border);
 }
 
-.panel {
+.side {
   position: absolute;
   right: 12px;
   top: 64px;
-  width: 260px;
+  bottom: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 280px;
+  overflow-y: auto;
+  pointer-events: none;
+}
+.side > * { pointer-events: auto; }
+
+.panel {
+  width: 100%;
   padding: 14px 16px;
   background: var(--ui-bg);
   border: 1px solid var(--ui-border);
@@ -136,7 +152,34 @@ button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px;
   backdrop-filter: blur(8px);
   font-size: 13px;
 }
-.panel h2 { margin: 0 0 8px; font-size: 15px; }
+.panel h2 { margin: 0; font-size: 15px; }
+.panel h3 { margin: 10px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ui-muted); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.panel .close { min-width: 28px; height: 28px; padding: 0; font-size: 18px; line-height: 1; }
+.status-line { margin: 0 0 8px; color: var(--ui-accent); }
+.price-row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.price-row span { flex: 1; color: var(--ui-muted); }
+.price-row strong { min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; }
+button.danger:hover:not(:disabled) { background: rgba(239, 71, 111, 0.35); }
+.catalog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.catalog .item {
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  text-align: left;
+}
+.item-name { font-weight: 600; }
+.item-cost { color: var(--ui-accent); font-variant-numeric: tabular-nums; }
+.item-stats { grid-column: 1 / -1; font-size: 11.5px; color: var(--ui-muted); }
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bars li { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; }
+.bars li > span:first-child { color: var(--ui-muted); }
+.bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.bar .fill { display: block; height: 100%; background: #06d6a0; border-radius: 4px; }
+.bar .fill.bad { background: var(--ui-pink); }
 .panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; }
 .panel dt { color: var(--ui-muted); }
 .panel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
@@ -181,6 +224,7 @@ button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px;
   border-radius: 10px;
   pointer-events: none;
 }
+.toast.info { background: rgba(17, 138, 178, 0.92); }
 
 .status {
   position: absolute;
@@ -227,34 +271,7 @@ kbd {
 
 @media (max-width: 900px) {
   .tool-label { display: none; }
-  .guests {
-  font-variant-numeric: tabular-nums;
-  color: var(--ui-muted);
-  padding-left: 12px;
-  border-left: 1px solid var(--ui-border);
-}
-
-.panel {
-  position: absolute;
-  right: 12px;
-  top: 64px;
-  width: 260px;
-  padding: 14px 16px;
-  background: var(--ui-bg);
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
-  backdrop-filter: blur(8px);
-  font-size: 13px;
-}
-.panel h2 { margin: 0 0 8px; font-size: 15px; }
-.panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; }
-.panel dt { color: var(--ui-muted); }
-.panel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-.panel .row { display: flex; gap: 6px; margin-bottom: 6px; }
-.panel .row button { flex: 1; font-size: 12px; }
-.panel .note { margin: 6px 0 0; color: var(--ui-muted); font-size: 12px; }
-
-.tool { min-width: 44px; height: 44px; }
+  .tool { min-width: 44px; height: 44px; }
   .status { display: none; }
 }
 

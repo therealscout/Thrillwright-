@@ -55,3 +55,28 @@ describe('ToolController', () => {
     expect(tools.state.tool).toBe('inspect');
   });
 });
+
+describe('ToolController building', () => {
+  it('places the chosen ride with the chosen facing and selects it with Look', () => {
+    const { park, tools } = setup();
+    tools.setBuildType('carousel');
+    tools.rotateFacing(); // south -> west
+    tools.pointer('down', { tx: 5, ty: 5 });
+    tools.pointer('up', { tx: 5, ty: 5 });
+    expect(park.buildings).toHaveLength(1);
+    expect(park.buildings[0]).toMatchObject({ type: 'carousel', x: 4, y: 4, facing: 3 });
+    expect(tools.state.message?.tone).toBe('info');
+    tools.setTool('inspect');
+    tools.pointer('down', { tx: 4, ty: 6 });
+    expect(tools.state.selected).toBe(park.buildings[0]!.id);
+    tools.pointer('down', { tx: 10, ty: 10 });
+    expect(tools.state.selected).toBeNull();
+  });
+
+  it('needs a building type before the Build tool works', () => {
+    const { tools } = setup();
+    tools.setTool('build');
+    expect(tools.state.tool).toBe('inspect');
+    expect(tools.state.message?.text).toContain('Build menu');
+  });
+});
