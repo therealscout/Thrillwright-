@@ -430,3 +430,15 @@ button.link { background: none; border: none; height: auto; padding: 4px 0; colo
 .panel .slider .value { text-align: right; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
 .panel input[type='range'] { accent-color: var(--ui-accent); width: 100%; }
 .panel input[type='checkbox'] { accent-color: var(--ui-accent); }
+
+/* ---- Saves (milestone 10) ----------------------------------------------------- */
+.continue-row { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid var(--ui-border); background: rgba(255, 209, 102, 0.06); }
+.continue-row .primary { min-width: 140px; height: 40px; }
+.continue-row span { color: var(--ui-muted); }
+.play-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; }
+.play-row button { min-width: 140px; height: 42px; font-size: 15px; }
+.play-row .note { flex-basis: 100%; }
+.scenario-detail .play-row .primary { margin-top: 0; }
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+.panel.options { max-height: calc(100vh - 190px); overflow-y: auto; }
+.panel .segmented { margin-bottom: 4px; }

@@ -21,6 +21,8 @@ import type { CoasterDesign } from '../core/coaster';
 import { GuestLayer } from './guest-layer';
 import { Atmosphere, skyState, type SkyInput, type SkyState } from './atmosphere';
 import { palette } from './palette';
+
+export type GraphicsQuality = 'high' | 'medium' | 'low';
 import {
   buildBrushGeometry,
   buildGridGeometry,
@@ -352,7 +354,7 @@ export class GameRenderer {
     if (key !== this.lastSkyKey) {
       this.lastSkyKey = key;
       this.lastSky = skyState(input);
-      this.atmosphere.apply(this.lastSky, input.rain);
+      this.atmosphere.apply(this.lastSky, this.reduceMotion ? 0 : input.rain);
       this.buildingLayer.setNight(this.lastSky.night);
     }
     this.atmosphere.update(dt, this.target);
@@ -442,6 +444,41 @@ export class GameRenderer {
 
   // ---- per frame ---------------------------------------------------------
 
+  /**
+   * Graphics quality: high keeps sharp shadows and full resolution; low turns
+   * shadows off and renders at one pixel per screen pixel, for older machines.
+   */
+  setQuality(quality: GraphicsQuality): void {
+    const dpr = window.devicePixelRatio || 1;
+    const settings = {
+      high: { ratio: Math.min(dpr, 2), shadows: true, map: 4096 },
+      medium: { ratio: Math.min(dpr, 1.5), shadows: true, map: 2048 },
+      low: { ratio: 1, shadows: false, map: 1024 },
+    }[quality];
+    this.renderer.setPixelRatio(settings.ratio);
+    this.renderer.shadowMap.enabled = settings.shadows;
+    this.scene.traverse((o) => {
+      if (o instanceof THREE.DirectionalLight) {
+        o.castShadow = settings.shadows;
+        if (o.shadow.mapSize.x !== settings.map) {
+          o.shadow.mapSize.set(settings.map, settings.map);
+          o.shadow.map?.dispose();
+          o.shadow.map = null;
+        }
+      }
+    });
+    // Materials compile differently with and without shadows.
+    this.scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) mat.needsUpdate = true;
+    });
+    this.resize();
+  }
+
+  /** Turn the view instantly instead of swinging round (reduced motion). */
+  reduceMotion = false;
+
   private resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
@@ -484,7 +521,7 @@ export class GameRenderer {
     // Smooth rotation toward the target view.
     const goal = rotationYaw(this.rotation);
     if (Math.abs(this.yaw - goal) > 1e-4) this.pointerMoved = true;
-    this.yaw = lerpAngle(this.yaw, goal, 1 - Math.exp(-dt * 12));
+    this.yaw = this.reduceMotion ? goal : lerpAngle(this.yaw, goal, 1 - Math.exp(-dt * 12));
     const off = isoCameraOffset(this.yaw, CAMERA_DISTANCE);
     this.camera.position.set(this.target.x + off.x, this.target.y + off.y, this.target.z + off.z);
     this.camera.lookAt(this.target);
