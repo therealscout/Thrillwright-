@@ -50,7 +50,9 @@ function cornerLock(t: Terrain, cx: number, cy: number): 'unowned' | 'building' 
   for (let ty = cy - 1; ty <= cy; ty++) {
     for (let tx = cx - 1; tx <= cx; tx++) {
       if (tx < 0 || ty < 0 || tx >= t.width || ty >= t.height) continue;
-      if (t.blocked[tileIndex(t, tx, ty)]) lock = 'building';
+      const k = tileIndex(t, tx, ty);
+      // Land under coaster track stays put too, so the track keeps its clearance.
+      if (t.blocked[k] || t.trackHigh[k]) lock = 'building';
       else if (!isOwned(t, tx, ty) && !lock) lock = 'unowned';
     }
   }
@@ -163,6 +165,7 @@ export function moveWater(t: Terrain, tiles: TileCoord[], direction: 1 | -1, bud
     if (value === t.water[k]) continue;
     if (value > 0 && t.paths[k]) return fail('That would flood a path.');
     if (value > 0 && t.blocked[k]) return fail('That would flood a ride or stall.');
+    if (value > 0 && t.trackLow[k] && value >= (t.trackLow[k] as number) - 1) return fail('That would flood the coaster track.');
     changes.push([k, value]);
   }
   if (changes.length === 0) return fail('Nothing to change here.');

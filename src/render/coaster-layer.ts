@@ -5,11 +5,11 @@
  */
 import * as THREE from 'three';
 import type { Building } from '../core/buildings';
-import { COASTER_CARS, coasterEntrance, endState, type CoasterDesign } from '../core/coaster';
+import { COASTER_CARS, coasterEntrance, designTiles, endState, uniqueTiles, type CoasterDesign } from '../core/coaster';
 import { runTest, trainPosition } from '../core/coaster-physics';
 import { HEIGHT_STEP } from '../core/grid';
 import { SHIRTS, SKINS } from './guest-layer';
-import { tileMaxHeight, type Terrain } from '../core/terrain';
+import { tileIndex, tileMaxHeight, type Terrain } from '../core/terrain';
 import { FORWARD, sampleTrack, STATION_LENGTH, type TrackPoint } from '../core/track';
 import type { BuildingStats } from '../sim/sim-core';
 
@@ -94,9 +94,47 @@ function tube(points: readonly TrackPoint[], offRight: number, offUp: number, ra
 const tieGeometry = new THREE.BoxGeometry(GAUGE * 2 + 0.06, 0.035, 0.06);
 const supportGeometry = new THREE.CylinderGeometry(0.05, 0.06, 1, 6).translate(0, 0.5, 0);
 const footGeometry = new THREE.BoxGeometry(0.2, 0.06, 0.2);
+const beamGeometry = new THREE.BoxGeometry(1, 0.07, 0.07);
+
+/**
+ * Is there something under this point a support column must not stand in:
+ * a path, or another stretch of track lower down? Then the support becomes
+ * a two-legged frame at the tile's corners that straddles it.
+ */
+export type SupportObstacle = (tx: number, ty: number, underY: number) => boolean;
+
+/** Track heights (world units) over each tile, from a set of designs. */
+export function trackEnvelope(designs: readonly CoasterDesign[]): Map<number, Array<[number, number]>> {
+  const map = new Map<number, Array<[number, number]>>();
+  for (const d of designs) {
+    for (const uses of designTiles(d)) {
+      for (const u of uses) {
+        const key = u.ty * 4096 + u.tx;
+        let list = map.get(key);
+        if (!list) map.set(key, (list = []));
+        list.push([u.hMin * HEIGHT_STEP, u.hMax * HEIGHT_STEP + LIFT + 0.3]);
+      }
+    }
+  }
+  return map;
+}
+
+/** Paths, plus any track whose top is below the support's top. */
+export function supportObstacles(terrain: Terrain, envelope: Map<number, Array<[number, number]>>): SupportObstacle {
+  return (tx, ty, underY) => {
+    if (terrain.paths[tileIndex(terrain, tx, ty)]) return true;
+    return (envelope.get(ty * 4096 + tx) ?? []).some(([, top]) => top < underY - 0.05);
+  };
+}
 
 /** Track, ties and supports for a design. */
-export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: TrackColours, ghost = false): { group: THREE.Group; points: TrackPoint[] } {
+export function buildTrack(
+  design: CoasterDesign,
+  terrain: Terrain,
+  colours: TrackColours,
+  ghost = false,
+  obstacle: SupportObstacle = () => false,
+): { group: THREE.Group; points: TrackPoint[] } {
   const group = new THREE.Group();
   const points = sampleTrack(design.start, design.pieces);
   if (points.length < 2) return { group, points };
@@ -117,6 +155,7 @@ export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: Tra
   const ties: THREE.Matrix4[] = [];
   const supports: THREE.Matrix4[] = [];
   const feet: THREE.Matrix4[] = [];
+  const beams: THREE.Matrix4[] = [];
   for (let s = 0.15; s < total; s += 0.32) {
     pointAt(points, s, frame);
     r.crossVectors(frame.u, frame.t).normalize();
@@ -134,6 +173,23 @@ export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: Tra
     const under = frame.u.y > 0 ? frame.p.y - 0.17 : frame.p.y + 0.17 * frame.u.y;
     const height = under - ground;
     if (height < 0.12 || frame.u.y < -0.2) continue;
+    if (obstacle(tx, ty, under)) {
+      // Straddle the path or lower track: legs at two opposite corners, the
+      // pair lying most across the track, joined by a beam under it.
+      const across = Math.abs(frame.t.x + frame.t.z) < Math.abs(frame.t.x - frame.t.z);
+      const a = across ? [tx + 0.05, ty + 0.05] : [tx + 0.95, ty + 0.05];
+      const b = across ? [tx + 0.95, ty + 0.95] : [tx + 0.05, ty + 0.95];
+      for (const [x, z] of [a, b] as Array<[number, number]>) {
+        const g = tileMaxHeight(terrain, tx, ty) * HEIGHT_STEP;
+        supports.push(new THREE.Matrix4().compose(new THREE.Vector3(x, g, z), new THREE.Quaternion(), new THREE.Vector3(1, under - g, 1)));
+        feet.push(new THREE.Matrix4().makeTranslation(x, g + 0.03, z));
+      }
+      const dx = (b[0] as number) - (a[0] as number);
+      const dz = (b[1] as number) - (a[1] as number);
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.atan2(dz, dx));
+      beams.push(new THREE.Matrix4().compose(new THREE.Vector3(frame.p.x, under, frame.p.z), q, new THREE.Vector3(Math.hypot(dx, dz), 1, 1)));
+      continue;
+    }
     supports.push(new THREE.Matrix4().compose(new THREE.Vector3(frame.p.x, ground, frame.p.z), new THREE.Quaternion(), new THREE.Vector3(1, height, 1)));
     feet.push(new THREE.Matrix4().makeTranslation(frame.p.x, ground + 0.03, frame.p.z));
   }
@@ -147,6 +203,7 @@ export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: Tra
   instanced(tieGeometry, '#3d4654', ties);
   instanced(supportGeometry, colours.support, supports);
   instanced(footGeometry, '#9aa3ad', feet);
+  instanced(beamGeometry, colours.support, beams);
   return { group, points };
 }
 
@@ -275,6 +332,10 @@ function buildCar(color: string, lead: boolean, riders: Rider[]): THREE.Group {
 interface Entry {
   building: Building;
   group: THREE.Group;
+  /** Track, supports and station: rebuilt when what's under the track changes. */
+  track: THREE.Group;
+  /** What the supports were last fitted around. */
+  signature: string;
   points: TrackPoint[];
   timeline: Float32Array;
   duration: number;
@@ -294,18 +355,31 @@ export class CoasterLayer {
   private draft: { key: string; group: THREE.Group } | null = null;
   private readonly frame = { p: new THREE.Vector3(), t: new THREE.Vector3(), u: new THREE.Vector3() };
 
+  /** Every built coaster's track heights, for fitting supports around. */
+  private envelope = new Map<number, Array<[number, number]>>();
+
   sync(buildings: readonly Building[], terrain: Terrain): void {
     const seen = new Set<number>();
+    this.envelope = trackEnvelope(buildings.flatMap((b) => (b.coaster ? [b.coaster] : [])));
+    const obstacle = supportObstacles(terrain, this.envelope);
     for (const b of buildings) {
       if (!b.coaster) continue;
       seen.add(b.id);
       const existing = this.entries.get(b.id);
       if (existing && existing.building.coaster === b.coaster) {
         existing.building = b;
+        // Paths laid or track built underneath: refit the supports.
+        const signature = this.signature(b.coaster, terrain);
+        if (signature !== existing.signature) {
+          existing.group.remove(existing.track);
+          existing.track = this.buildTrackGroup(b, terrain, obstacle);
+          existing.group.add(existing.track);
+          existing.signature = signature;
+        }
         continue;
       }
       if (existing) this.group.remove(existing.group);
-      this.entries.set(b.id, this.create(b, terrain));
+      this.entries.set(b.id, this.create(b, terrain, obstacle));
     }
     for (const [id, e] of this.entries) {
       if (seen.has(id)) continue;
@@ -347,7 +421,9 @@ export class CoasterLayer {
     if (this.draft) this.group.remove(this.draft.group);
     this.draft = null;
     if (!design) return;
-    const { group } = buildTrack(design, terrain, valid ? DRAFT : { rail: '#ef476f', spine: '#ef476f', support: '#ef476f' }, true);
+    const envelope = new Map(this.envelope);
+    for (const [k, v] of trackEnvelope([design])) envelope.set(k, [...(envelope.get(k) ?? []), ...v]);
+    const { group } = buildTrack(design, terrain, valid ? DRAFT : { rail: '#ef476f', spine: '#ef476f', support: '#ef476f' }, true, supportObstacles(terrain, envelope));
     // An arrow where the next piece goes.
     if (design.pieces.length) {
       const end = endState(design);
@@ -361,10 +437,30 @@ export class CoasterLayer {
     this.group.add(group);
   }
 
-  private create(b: Building, terrain: Terrain): Entry {
+  /** Paths, ground and other track under a coaster's tiles, as a string to compare. */
+  private signature(design: CoasterDesign, terrain: Terrain): string {
+    const parts: string[] = [];
+    for (const { tx, ty } of uniqueTiles(design)) {
+      if (tx < 0 || ty < 0 || tx >= terrain.width || ty >= terrain.height) continue;
+      const env = this.envelope.get(ty * 4096 + tx) ?? [];
+      parts.push(`${terrain.paths[tileIndex(terrain, tx, ty)]}${tileMaxHeight(terrain, tx, ty)}.${env.length}`);
+    }
+    return parts.join(',');
+  }
+
+  private buildTrackGroup(b: Building, terrain: Terrain, obstacle: SupportObstacle): THREE.Group {
     const info = b.coaster as NonNullable<Building['coaster']>;
-    const { group, points } = buildTrack(info, terrain, BUILT);
+    const { group } = buildTrack(info, terrain, BUILT, false, obstacle);
     group.add(buildStation(info, info.side, terrain));
+    return group;
+  }
+
+  private create(b: Building, terrain: Terrain, obstacle: SupportObstacle): Entry {
+    const info = b.coaster as NonNullable<Building['coaster']>;
+    const group = new THREE.Group();
+    const track = this.buildTrackGroup(b, terrain, obstacle);
+    group.add(track);
+    const points = sampleTrack(info.start, info.pieces);
     const run = runTest(info);
     const train: THREE.Group[] = [];
     const riders: Rider[] = [];
@@ -376,7 +472,7 @@ export class CoasterLayer {
     this.group.add(group);
     const stationS = run.timeline[0] ?? 0;
     const duration = run.timeline.length ? (run.timeline.length - 1) * 0.1 : 0;
-    const entry: Entry = { building: b, group, points, timeline: run.timeline, duration, cycle: info.ratings.duration + 4, train, riders, cheer: train.map(() => 0), time: 0, stationS };
+    const entry: Entry = { building: b, group, track, signature: this.signature(info, terrain), points, timeline: run.timeline, duration, cycle: info.ratings.duration + 4, train, riders, cheer: train.map(() => 0), time: 0, stationS };
     this.placeTrain(entry, stationS);
     return entry;
   }

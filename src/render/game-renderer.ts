@@ -292,7 +292,7 @@ export class GameRenderer {
     let n = 0;
     for (const [tx, ty, r] of this.treeSpots) {
       const k = tileIndex(t, tx, ty);
-      if (t.paths[k] || t.water[k] || t.blocked[k]) continue;
+      if (t.paths[k] || t.water[k] || t.blocked[k] || t.trackHigh[k]) continue;
       const scale = 0.75 + r * 0.6;
       pos.set(tx + 0.3 + r * 0.4, tileCentreY(t, tx, ty), ty + 0.3 + (1 - r) * 0.4);
       q.setFromAxisAngle(up, r * Math.PI * 2);

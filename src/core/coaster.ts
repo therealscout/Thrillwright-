@@ -109,7 +109,15 @@ export function checkPiece(t: Terrain, design: CoasterDesign, state: TrackState,
     if (u.hMax > MAX_TRACK_HEIGHT) return fail('That is as high as track can go.');
     const k = tileIndex(t, u.tx, u.ty);
     if (!t.owned[k]) return fail("You don't own this land.");
-    if (t.blocked[k]) return fail('Something is already built here.');
+    // Another coaster here: pass under or over it with headroom, like track crossing itself.
+    const otherLow = (t.trackLow[k] as number) - 1;
+    const otherHigh = (t.trackHigh[k] as number) - 1;
+    if (t.blocked[k] && otherHigh < 0) return fail('Something is already built here.');
+    if (otherHigh >= 0) {
+      if (kind === 'station') return fail('A station needs open sky above it.');
+      const clear = u.hMin >= otherHigh + TRACK_CLEARANCE || otherLow >= u.hMax + TRACK_CLEARANCE;
+      if (!clear) return fail('The track would hit another coaster.');
+    }
     const ground = tileMaxHeight(t, u.tx, u.ty);
     if (u.hMin < ground) return fail('The track would go into the ground.');
     if (kind === 'station') {

@@ -2,7 +2,7 @@
  * The player's park: terrain, buildings, cash and the undo history. Tools go
  * through here so every change is costed and can be undone.
  */
-import { checkPlacement, setBlocked, type Building, type Facing } from '../core/buildings';
+import { checkPlacement, refreshOccupancy, type Building, type Facing } from '../core/buildings';
 import { buildingType } from '../core/catalog';
 import { checkDesign, checkEntrance, type CoasterInfo } from '../core/coaster';
 import { STARTING_CASH, WAGES } from '../core/costs';
@@ -210,7 +210,7 @@ export class Park {
     this.beginStroke();
     const building: Building = { id: this.nextBuildingId++, ...candidate, price: info.price, open: true };
     this.buildings.push(building);
-    setBlocked(this.terrain, building, 1);
+    refreshOccupancy(this.terrain, this.buildings);
     this.spend(info.cost);
     this.endStroke();
     return { ok: true, cost: info.cost, building, connected: check.connected };
@@ -251,7 +251,7 @@ export class Park {
       coaster: info,
     };
     this.buildings.push(building);
-    setBlocked(this.terrain, building, 1);
+    refreshOccupancy(this.terrain, this.buildings);
     this.strokeSpent = info.cost;
     this.strokeChanged = true;
     this.endStroke();
@@ -265,7 +265,7 @@ export class Park {
     if (!building) return { ok: false, cost: 0, reason: 'Nothing to demolish.' };
     const refund = Math.round((building.coaster?.cost ?? buildingType(building.type).cost) * DEMOLISH_REFUND);
     this.beginStroke();
-    setBlocked(this.terrain, building, 0);
+    refreshOccupancy(this.terrain, this.buildings.filter((b) => b !== building));
     this.buildings = this.buildings.filter((b) => b.id !== id);
     this.spend(-refund);
     this.endStroke();
@@ -342,6 +342,7 @@ export class Park {
   private restore(snap: Snapshot): void {
     restoreTerrain(this.terrain, snap.terrain);
     this.buildings = snap.buildings.map((b) => ({ ...b }));
+    refreshOccupancy(this.terrain, this.buildings);
     this.changed();
   }
 
@@ -365,6 +366,8 @@ export class Park {
     this.staff.mechanics = state.staff.mechanics;
     this.buildings = structuredClone(state.buildings);
     this.nextBuildingId = this.buildings.reduce((m, b) => Math.max(m, b.id), 0) + 1;
+    // Older saves blocked every tile under a coaster; work it out again.
+    refreshOccupancy(this.terrain, this.buildings);
     this.undoStack.length = 0;
     this.redoStack.length = 0;
     this.changed();
