@@ -7,7 +7,10 @@
  * do next) only once a second, staggered across ticks so the work is spread
  * evenly.
  */
-import { fairPrice } from '../core/pricing';
+import { INTENSITY_MARGIN, fairPrice } from '../core/pricing';
+
+/** A ride must score above this for a guest to set off for it. */
+const MIN_RIDE_SCORE = 0.2;
 export { fairPrice, suggestedTicket } from '../core/pricing';
 import { HEIGHT_STEP } from '../core/grid';
 import { GuestState, GuestStore } from './guests';
@@ -129,7 +132,7 @@ export interface BuildingStats {
    * Rides: how many guests recently looked at this ride and turned it down,
    * and why (decays over a minute or so). Explains an empty ride.
    */
-  refused?: { intense: number; price: number; queue: number };
+  refused?: { intense: number; price: number; queue: number; dull: number };
   /** 0..1 progress through the current ride cycle; 0 while loading. */
   phase: number;
   customers: number;
@@ -212,7 +215,7 @@ interface BuildingRuntime {
   /** Looks of the guests on board. */
   looks: number[];
   /** Recent guests who turned the ride down: too intense, too pricey, queue too long. */
-  refused: { intense: number; price: number; queue: number };
+  refused: { intense: number; price: number; queue: number; dull: number };
   customers: number;
   revenue: number;
   reliability: number;
@@ -377,7 +380,7 @@ export class SimCore {
         looks: b.riders ? b.looks : undefined,
         reachable: this.entrances.some((e) => (b.dist[e.ty * this.world.width + e.tx] as number) !== UNREACHABLE),
         refused: b.def.kind === 'ride'
-          ? { intense: Math.round(b.refused.intense), price: Math.round(b.refused.price), queue: Math.round(b.refused.queue) }
+          ? { intense: Math.round(b.refused.intense), price: Math.round(b.refused.price), queue: Math.round(b.refused.queue), dull: Math.round(b.refused.dull) }
           : undefined,
         phase: b.running ? Math.min(b.timer / b.def.cycle, 1) : 0,
         customers: b.customers,
@@ -606,18 +609,20 @@ export class SimCore {
     const pref = (g.intensityPref[i] as number) / 10;
     const queasy = (g.nausea[i] as number) > 100 + (g.nauseaTolerance[i] as number) * 0.3;
     let best = 0;
-    let bestScore = 0.5;
+    let bestScore = MIN_RIDE_SCORE;
+    const dull: BuildingRuntime[] = [];
     for (const b of this.buildings.values()) {
       const d = b.def;
       if (d.kind !== 'ride' || !d.open || b.broken || d.id === g.lastRide[i] || d.price > (g.cash[i] as number)) continue;
-      if (d.intensity > pref + 2.5) {
+      // Only rides a guest could walk to count as turned down.
+      const dist = this.distTo(b, i);
+      if (dist === UNREACHABLE) continue;
+      if (d.intensity > pref + INTENSITY_MARGIN) {
         b.refused.intense++;
         if (g.random(i) < 0.03) this.think_(i, Thought.TooIntense, d.id);
         continue;
       }
       if (queasy && d.nausea > 2.5) continue;
-      const dist = this.distTo(b, i);
-      if (dist === UNREACHABLE) continue;
       // Guests have a feel for what a ride is worth.
       if (d.price > fairPrice(d.excitement) + g.random(i)) {
         b.refused.price++;
@@ -631,12 +636,14 @@ export class SimCore {
         if (g.random(i) < 0.08) this.think_(i, Thought.QueueTooLong, d.id);
         continue;
       }
-      const score = fit - dist / 40 - wait * 0.4 - d.price * 0.15 + g.random(i) * 0.5;
+      const score = fit - dist / 60 - wait * 0.4 - d.price * 0.15 + g.random(i) * 0.5;
       if (score > bestScore) {
         bestScore = score;
         best = d.id;
-      }
+      } else if (score <= MIN_RIDE_SCORE) dull.push(b);
     }
+    // Rides that weren't worth the walk or the money, when nothing else tempted them either.
+    if (best === 0) for (const b of dull) b.refused.dull++;
     return best;
   }
 
@@ -963,7 +970,7 @@ export class SimCore {
         def.id,
         old
           ? { ...old, def, dist, line }
-          : { def, dist, line, places: new Map(), running: false, timer: 0, queue: 0, riders: 0, looks: [], refused: { intense: 0, price: 0, queue: 0 }, customers: 0, revenue: 0, reliability: 100, broken: false, downtime: 0, mechanic: 0 },
+          : { def, dist, line, places: new Map(), running: false, timer: 0, queue: 0, riders: 0, looks: [], refused: { intense: 0, price: 0, queue: 0, dull: 0 }, customers: 0, revenue: 0, reliability: 100, broken: false, downtime: 0, mechanic: 0 },
       );
     }
     this.buildings = next;
@@ -1037,7 +1044,7 @@ export class SimCore {
       nausea: g.nausea[i] as number,
       cash: g.cash[i] as number,
       rides: g.rides[i] as number,
-      maxIntensity: Math.round(((g.intensityPref[i] as number) / 10 + 2.5) * 10) / 10,
+      maxIntensity: Math.round(((g.intensityPref[i] as number) / 10 + INTENSITY_MARGIN) * 10) / 10,
       minutes: Math.floor((g.age[i] as number) / 60),
       thought: g.thought[i] as Thought,
       thoughtAbout: g.thoughtAbout[i] as number,
@@ -1161,6 +1168,7 @@ export class SimCore {
       b.refused.intense *= 0.97;
       b.refused.price *= 0.97;
       b.refused.queue *= 0.97;
+      b.refused.dull *= 0.97;
     }
     this.unhappyLeavers *= 0.99;
     this.rebuildDirtMap();

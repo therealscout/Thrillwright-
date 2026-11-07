@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rideHints } from './BuildingInfo';
-import { suggestedTicket } from '../core/pricing';
+import { riderShare, suggestedTicket } from '../core/pricing';
 import { SimCore, TICK_RATE, type SimBuilding, type SimWorld } from '../sim/sim-core';
 
 function street(buildings: SimBuilding[], width = 30): SimWorld {
@@ -51,6 +51,30 @@ describe('why a ride is empty', () => {
     const s = sim.stats().buildings[0]!;
     expect(s.refused?.intense).toBeGreaterThan(5);
     expect(rideHints(s, 1, 6).some((h) => h.text.includes('intense'))).toBe(true);
+  });
+
+  it('only counts guests who could have walked there', () => {
+    const sim = crowd(ride({ ay: 8, intensity: 11 }));
+    run(sim, 30);
+    expect(sim.stats().buildings[0]?.refused?.intense).toBe(0);
+  });
+
+  it('estimates how many guests are brave enough', () => {
+    expect(riderShare(2)).toBe(1);
+    expect(riderShare(7)).toBeGreaterThan(0.4);
+    expect(riderShare(12)).toBe(0);
+    expect(riderShare(9)).toBeLessThan(riderShare(8));
+  });
+
+  it('gets riders on a modest ride at the far end of the park', () => {
+    const sim = new SimCore(street([ride({ ax: 58, price: 3, excitement: 3, intensity: 5 })], 60), [{ tx: 0, ty: 5 }], { arrivalRate: 0, maxGuests: 60 });
+    sim.spawnScattered(50);
+    for (let i = 0; i < sim.guests.count; i++) {
+      sim.guests.stay[i] = 10_000;
+      sim.guests.cash[i] = 100;
+    }
+    run(sim, 90);
+    expect(sim.stats().buildings[0]?.customers).toBeGreaterThan(5);
   });
 
   it('reports an entrance no path reaches', () => {
