@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { AudioEngine, AudioSettings } from '../audio/audio-engine';
-import type { DisplaySettings } from '../game/display-settings';
+import { UI_SCALES, type DisplaySettings } from '../game/display-settings';
 
 export interface DisplayControl {
   settings: DisplaySettings;
@@ -66,6 +66,44 @@ export function OptionsPanel({ audio, display, onClose }: Props) {
         Show rain and clouds
       </label>
       <p class="note">Weather still affects visitors when its effects are hidden.</p>
+      <h3>Graphics</h3>
+      <div class="segmented" role="radiogroup" aria-label="Graphics quality">
+        {(['high', 'medium', 'low'] as const).map((q) => (
+          <button
+            type="button"
+            key={q}
+            role="radio"
+            aria-checked={look.quality === q}
+            class={look.quality === q ? 'active' : ''}
+            onClick={() => setDisplay({ quality: q })}
+            data-quality={q}
+          >
+            {q[0]?.toUpperCase() + q.slice(1)}
+          </button>
+        ))}
+      </div>
+      <p class="note">Low turns shadows off and lowers the resolution, for older computers.</p>
+      <h3>Accessibility</h3>
+      <div class="segmented" role="radiogroup" aria-label="Interface size">
+        {UI_SCALES.map((scale) => (
+          <button
+            type="button"
+            key={scale}
+            role="radio"
+            aria-checked={look.uiScale === scale}
+            class={look.uiScale === scale ? 'active' : ''}
+            onClick={() => setDisplay({ uiScale: scale })}
+            data-ui-scale={scale}
+          >
+            {Math.round(scale * 100)}%
+          </button>
+        ))}
+      </div>
+      <p class="note">Size of the menus and panels.</p>
+      <label class="check">
+        <input type="checkbox" checked={look.reduceMotion} onChange={(e) => setDisplay({ reduceMotion: (e.target as HTMLInputElement).checked })} data-testid="reduce-motion" />
+        Reduce motion (no camera swing or falling rain)
+      </label>
     </aside>
   );
 }

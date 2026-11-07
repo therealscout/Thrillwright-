@@ -8,8 +8,18 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
-    // Three.js alone is ~600 kB minified; split it out in a later milestone.
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        // Three.js changes rarely: keep it in its own file so browsers can
+        // cache it across game updates.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/three')) return 'three';
+          if (id.includes('node_modules/preact')) return 'preact';
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     include: ['src/**/*.test.ts'],

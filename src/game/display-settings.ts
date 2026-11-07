@@ -7,22 +7,48 @@ export interface DisplaySettings {
   dayNight: boolean;
   /** Show rain and clouds (the weather still happens either way). */
   weatherEffects: boolean;
+  /** Shadows and resolution. */
+  quality: 'high' | 'medium' | 'low';
+  /** Snap the camera round and leave out falling rain. */
+  reduceMotion: boolean;
+  /** Size of the menus and panels. */
+  uiScale: number;
+}
+
+export const UI_SCALES = [1, 1.15, 1.3, 1.5];
+
+/** Start from what the device and the player's system settings suggest. */
+function defaults(): DisplaySettings {
+  let reduceMotion = false;
+  let quality: DisplaySettings['quality'] = 'high';
+  try {
+    reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Phones and small tablets: go easier on the GPU.
+    if (window.matchMedia('(pointer: coarse)').matches) quality = 'medium';
+  } catch {
+    // No window (tests): keep the defaults.
+  }
+  return { dayNight: true, weatherEffects: true, quality, reduceMotion, uiScale: 1 };
 }
 
 const KEY = 'thrillwright.display';
-const DEFAULTS: DisplaySettings = { dayNight: true, weatherEffects: true };
 
 export function loadDisplaySettings(): DisplaySettings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULTS };
+    const base = defaults();
+    if (!raw) return base;
     const v = JSON.parse(raw) as Partial<DisplaySettings>;
+    const bool = (x: unknown, d: boolean) => (typeof x === 'boolean' ? x : d);
     return {
-      dayNight: typeof v.dayNight === 'boolean' ? v.dayNight : DEFAULTS.dayNight,
-      weatherEffects: typeof v.weatherEffects === 'boolean' ? v.weatherEffects : DEFAULTS.weatherEffects,
+      dayNight: bool(v.dayNight, base.dayNight),
+      weatherEffects: bool(v.weatherEffects, base.weatherEffects),
+      quality: v.quality === 'low' || v.quality === 'medium' || v.quality === 'high' ? v.quality : base.quality,
+      reduceMotion: bool(v.reduceMotion, base.reduceMotion),
+      uiScale: typeof v.uiScale === 'number' && UI_SCALES.includes(v.uiScale) ? v.uiScale : base.uiScale,
     };
   } catch {
-    return { ...DEFAULTS };
+    return defaults();
   }
 }
 

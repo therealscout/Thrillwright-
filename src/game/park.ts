@@ -52,6 +52,14 @@ export const DEMOLISH_REFUND = 0.5;
 /** Most staff of each kind. */
 export const MAX_STAFF = 50;
 
+export interface ParkState {
+  cash: number;
+  income: number;
+  wages: number;
+  staff: { handymen: number; mechanics: number };
+  buildings: Building[];
+}
+
 export class Park {
   cash: number;
   buildings: Building[] = [];
@@ -338,6 +346,27 @@ export class Park {
     this.undoStack.push(entry);
     if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
     this.redoStack.length = 0;
+  }
+
+  /** Everything needed to rebuild this park later (terrain is saved separately). */
+  saveState(): ParkState {
+    return { cash: this.cash, income: this.income, wages: this.wages, staff: { ...this.staff }, buildings: structuredClone(this.buildings) };
+  }
+
+  /** Put back a saved park. Undo history starts fresh. */
+  loadState(state: ParkState): void {
+    this.cash = state.cash;
+    this.income = state.income;
+    this.wages = state.wages;
+    this.staff.handymen = state.staff.handymen;
+    this.staff.mechanics = state.staff.mechanics;
+    this.buildings = structuredClone(state.buildings);
+    this.nextBuildingId = this.buildings.reduce((m, b) => Math.max(m, b.id), 0) + 1;
+    this.undoStack.length = 0;
+    this.redoStack.length = 0;
+    this.changed();
+    for (const l of this.cashListeners) l();
+    for (const l of this.staffListeners) l();
   }
 
   private changed(): void {

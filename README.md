@@ -2,7 +2,11 @@
 
 An original, browser-based theme park builder: grow a park from an empty field, design roller coasters piece by piece, and keep thousands of guests happy, each with their own needs and opinions.
 
-Status: **milestone 9 (day and night, weather, music and sound)**. Open with `?bench=10000` for a 10,000-guest performance test. See [docs/](docs/) for milestone notes.
+Status: **all ten milestones built**: five scenarios and a sandbox, a tutorial, coasters, park management, day and night, weather, music, and saves. New players should start with the [how to play guide](docs/2026-11-07-how-to-play.md). Open with `?bench=10000` for a 10,000-guest performance test. See [docs/](docs/) for milestone notes.
+
+## Play online
+
+Once GitHub Pages is on, the game is at https://therealscout.github.io/Thrillwright-/. Every push to `main` publishes a new build. To turn it on, set Settings → Pages → Source to **GitHub Actions**. See [the release notes](docs/2026-11-07-milestone-10-release.md#deploying).
 
 ## Play locally
 
@@ -28,7 +32,8 @@ Then open the URL Vite prints (usually http://localhost:5173).
 | Finances, marketing, research | Manage button |
 | Pause, game speed | P, or the ❚❚ 1× 2× 3× buttons in the top bar |
 | Scenario goal | Click the ◎ Goal chip in the top bar |
-| Sound and display options | ⚙ button (top right) |
+| Sound, display, graphics and accessibility | ⚙ button (top right) |
+| Save | Ctrl+S or 💾 (also saves itself every month) |
 | Park rating and guest thoughts | Click the ★ rating or guest count |
 | Rides and stalls | B, then R to turn the entrance |
 | Coaster builder | C, then R to turn the station |

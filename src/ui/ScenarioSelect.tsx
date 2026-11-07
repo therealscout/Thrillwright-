@@ -1,10 +1,11 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { deadlineText, goalLines } from '../game/goals';
+import { latestSave, readSave } from '../game/save';
 import { SCENARIOS, isScenarioOpen, loadCompleted, scenarioById, type Scenario } from '../game/scenarios';
 import { money } from './format';
 
 interface Props {
-  onPlay(id: string): void;
+  onPlay(id: string, resume?: boolean): void;
   /** Go back to the park being played (left out on first load). */
   onClose?(): void;
 }
@@ -26,6 +27,12 @@ export function ScenarioSelect({ onPlay, onClose }: Props) {
     return (next ?? SCENARIOS[0])!.id;
   });
   const current = scenarioById(picked) as Scenario;
+  const [last] = useState(latestSave);
+  const saved = readSave(current.id);
+  // Start keyboard players on the main button.
+  useEffect(() => {
+    (document.querySelector('[data-testid="continue"], [data-testid="resume"], [data-testid="play"]') as HTMLElement | null)?.focus();
+  }, []);
   const open = isScenarioOpen(current, completed);
   return (
     <div class="menu-backdrop" data-testid="scenario-select">
@@ -38,6 +45,16 @@ export function ScenarioSelect({ onPlay, onClose }: Props) {
           </div>
           {onClose && <button type="button" class="close" onClick={onClose} aria-label="Back to the park">×</button>}
         </header>
+        {last && scenarioById(last.scenario) && (
+          <div class="continue-row">
+            <button type="button" class="primary" data-testid="continue" onClick={() => onPlay(last.scenario, true)}>
+              Continue
+            </button>
+            <span>
+              {scenarioById(last.scenario)?.name} · {last.dateText}
+            </span>
+          </div>
+        )}
         <div class="menu-body">
           <ul class="scenario-list" role="listbox" aria-label="Scenarios">
             {SCENARIOS.map((s) => {
@@ -77,9 +94,17 @@ export function ScenarioSelect({ onPlay, onClose }: Props) {
               {current.management.researched === 'all' ? ', every ride researched' : ''}.
             </p>
             {open ? (
-              <button type="button" class="primary" data-testid="play" onClick={() => onPlay(current.id)}>
-                {current.tutorial ? 'Start tutorial' : 'Play'}
-              </button>
+              <div class="play-row">
+                {saved && (
+                  <button type="button" class="primary" data-testid="resume" onClick={() => onPlay(current.id, true)}>
+                    Continue ({saved.dateText})
+                  </button>
+                )}
+                <button type="button" class={saved ? '' : 'primary'} data-testid="play" onClick={() => onPlay(current.id)}>
+                  {saved ? 'Start over' : current.tutorial ? 'Start tutorial' : 'Play'}
+                </button>
+                {saved && <p class="note">Starting over replaces your saved game for this park when it next saves.</p>}
+              </div>
             ) : (
               <p class="note warn">Finish {scenarioById(current.after)?.name} to unlock this park.</p>
             )}

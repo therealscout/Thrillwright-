@@ -60,14 +60,18 @@ interface AppProps {
   weather: Weather;
   audio: AudioEngine;
   display: DisplayControl;
-  onPlay(id: string): void;
+  onPlay(id: string, resume?: boolean): void;
+  /** Save now (missing when there's nothing to save, such as on the menu). */
+  onSave?: () => boolean;
+  /** The park was loaded from a save. */
+  loaded?: boolean;
   dev: DevActions;
   showHelp?: boolean;
   /** Open the performance panel at start (benchmarks). */
   showPerf?: boolean;
 }
 
-export function App({ game, park, tools, coaster, sim, management, scenario, goals, weather, audio, display, onPlay, dev, showHelp: helpAtStart = true, showPerf: perfAtStart = false }: AppProps) {
+export function App({ game, park, tools, coaster, sim, management, scenario, goals, weather, audio, display, onPlay, onSave, loaded = false, dev, showHelp: helpAtStart = true, showPerf: perfAtStart = false }: AppProps) {
   const [stats, setStats] = useState<RendererStats | null>(null);
   const [tool, setTool] = useState<ToolState>(tools.state);
   const [simStats, setSimStats] = useState<SimStats>(sim.stats);
@@ -101,6 +105,9 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
   useEffect(() => management.onChange(() => setManageVersion((v) => v + 1)), [management]);
   useEffect(() => goals.onOutcome(setOutcome), [goals]);
   useEffect(() => weather.onChange(setSky), [weather]);
+  useEffect(() => {
+    if (loaded) tools.notify('Welcome back! Your park is just as you left it.', 'info');
+  }, []);
 
   // Pause and game speed.
   const [paused, setPausedState] = useState(sim.paused);
@@ -202,15 +209,29 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
       </header>
 
       <div class="toolbar camera" role="toolbar" aria-label="Camera">
-        <button type="button" onClick={() => game.rotate(-1)} title="Rotate left (Q)">⟲</button>
-        <button type="button" onClick={() => game.rotate(1)} title="Rotate right (E)">⟳</button>
-        <button type="button" onClick={() => game.zoomBy(1.25)} title="Zoom in (+)">＋</button>
-        <button type="button" onClick={() => game.zoomBy(0.8)} title="Zoom out (−)">－</button>
-        <button type="button" onClick={() => setShowPerf((v) => !v)} title="Performance test" aria-pressed={showPerf}>⚡</button>
-        <button type="button" onClick={() => setShowOptions((v) => !v)} title="Sound and display options" aria-pressed={showOptions} data-testid="options">
+        <button type="button" onClick={() => game.rotate(-1)} title="Rotate left (Q)" aria-label="Rotate view left">⟲</button>
+        <button type="button" onClick={() => game.rotate(1)} title="Rotate right (E)" aria-label="Rotate view right">⟳</button>
+        <button type="button" onClick={() => game.zoomBy(1.25)} title="Zoom in (+)" aria-label="Zoom in">＋</button>
+        <button type="button" onClick={() => game.zoomBy(0.8)} title="Zoom out (−)" aria-label="Zoom out">－</button>
+        <button type="button" onClick={() => setShowPerf((v) => !v)} title="Performance test" aria-label="Performance test" aria-pressed={showPerf}>⚡</button>
+        {onSave && (
+          <button
+            type="button"
+            onClick={() => {
+              const ok = onSave();
+              tools.notify(ok ? 'Game saved.' : "The game couldn't be saved here.", ok ? 'info' : 'error');
+            }}
+            title="Save (Ctrl+S). The game also saves itself every month."
+            aria-label="Save game"
+            data-testid="save"
+          >
+            💾
+          </button>
+        )}
+        <button type="button" onClick={() => setShowOptions((v) => !v)} title="Sound and display options" aria-label="Options" aria-pressed={showOptions} data-testid="options">
           ⚙
         </button>
-        <button type="button" onClick={() => setShowHelp((v) => !v)} title="Controls">?</button>
+        <button type="button" onClick={() => setShowHelp((v) => !v)} title="Controls" aria-label="Show controls">?</button>
       </div>
 
       {scenario?.tutorial && !showMenu && <TutorialCard park={park} sim={sim} game={game} opened={opened} />}
