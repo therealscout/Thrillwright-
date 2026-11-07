@@ -190,6 +190,9 @@ button.danger:hover:not(:disabled) { background: rgba(239, 71, 111, 0.35); }
 .panel .note { margin: 6px 0 0; color: var(--ui-muted); font-size: 12px; }
 .panel .note.warn { color: var(--ui-pink); }
 .status-line.broken { color: var(--ui-pink); font-weight: 600; }
+.ride-hints { margin: 0 0 10px; padding: 8px 10px 8px 26px; border-radius: 8px; background: rgba(255, 209, 102, 0.12); font-size: 12px; line-height: 1.4; }
+.ride-hints li + li { margin-top: 4px; }
+.ride-hints button.link { margin-left: 6px; padding: 0; font-weight: 600; text-decoration: underline; }
 .rating-big { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .rating-big strong { font-size: 30px; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
 .rating-big span { color: var(--ui-muted); font-size: 12px; }

@@ -1,6 +1,7 @@
 import type { Building } from '../core/buildings';
 import { buildingType } from '../core/catalog';
 import { COASTER_SEATS } from '../core/coaster';
+import { suggestedTicket } from '../core/pricing';
 import type { BuildingStats } from '../sim/sim-core';
 import { count, money, price, rating } from './format';
 
@@ -35,6 +36,7 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
           ? 'Loading'
           : 'Waiting for riders'
       : 'Open';
+  const hints = isRide && building.open && stats && !stats.broken ? rideHints(stats, building.price, excitement ?? 0) : [];
   return (
     <aside class="panel info" aria-label={`${type.name} details`} data-testid="building-info">
       <div class="panel-head">
@@ -42,6 +44,20 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
         <button type="button" class="close" onClick={onClose} aria-label="Close">×</button>
       </div>
       <p class={stats?.broken ? 'status-line broken' : 'status-line'}>{status}</p>
+      {hints.length > 0 && (
+        <ul class="ride-hints" data-testid="ride-hints">
+          {hints.map((h) => (
+            <li key={h.text}>
+              {h.text}
+              {h.price !== undefined && (
+                <button type="button" class="link" onClick={() => onPrice(h.price as number)}>
+                  Set {price.format(h.price)}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       <dl>
         {isRide && (
           <>
@@ -85,4 +101,31 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
       </div>
     </aside>
   );
+}
+
+interface Hint {
+  text: string;
+  /** A ticket price to offer as a one-click fix. */
+  price?: number;
+}
+
+/** Plain reasons a ride is quiet, from what guests have been deciding about it. */
+export function rideHints(stats: BuildingStats, ticket: number, excitement: number): Hint[] {
+  const hints: Hint[] = [];
+  if (!stats.reachable) {
+    hints.push({ text: "Guests can't reach the entrance. Join a path to the entrance sign." });
+    return hints;
+  }
+  const r = stats.refused;
+  if (!r) return hints;
+  const fair = suggestedTicket(excitement);
+  if (r.price >= 5 && ticket > fair) {
+    hints.push({ text: `Guests think the ticket is too dear for a ride this exciting. Most will pay ${price.format(fair)}.`, price: fair });
+  }
+  // Some guests always find a coaster too much; only mention it when the ride is quiet.
+  if (r.intense >= 5 && stats.queue < 8) {
+    hints.push({ text: 'Too intense for many guests. Gentler drops, slower turns or fewer loops would bring more riders.' });
+  }
+  if (r.queue >= 5) hints.push({ text: 'The queue is so long that guests are giving up on it.' });
+  return hints;
 }
