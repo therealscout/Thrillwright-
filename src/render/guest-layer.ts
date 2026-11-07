@@ -12,8 +12,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { SNAPSHOT_STRIDE } from '../sim/sim-core';
 import type { GuestSnapshot } from '../sim/sim-client';
 
-const SHIRTS = ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#f78c6b', '#9b5de5', '#f15bb5', '#00bbf9', '#fee440', '#8ac926', '#ff595e', '#ffffff'];
-const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524'];
+export const SHIRTS = ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#f78c6b', '#9b5de5', '#f15bb5', '#00bbf9', '#fee440', '#8ac926', '#ff595e', '#ffffff'];
+export const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524'];
 const PANTS = '#33415c';
 const SHOES = '#2b2d42';
 

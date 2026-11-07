@@ -11,9 +11,12 @@ interface Props {
   onToggleOpen(): void;
   onDemolish(): void;
   onClose(): void;
+  /** Coasters: follow the train with the camera. */
+  watching?: boolean;
+  onWatch?(on: boolean): void;
 }
 
-export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolish, onClose }: Props) {
+export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolish, onClose, watching, onWatch }: Props) {
   const type = buildingType(building.type);
   const r = building.coaster?.ratings;
   const excitement = r?.excitement ?? type.excitement;
@@ -70,6 +73,11 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
         </div>
       )}
       <div class="row">
+        {building.coaster && onWatch && (
+          <button type="button" class={watching ? 'primary' : ''} aria-pressed={!!watching} data-testid="watch" onClick={() => onWatch(!watching)}>
+            {watching ? 'Stop watching' : '🎥 Watch'}
+          </button>
+        )}
         <button type="button" onClick={onToggleOpen}>{building.open ? 'Close' : 'Open'}</button>
         <button type="button" class="danger" onClick={onDemolish} title={`Refunds half the build price${building.coaster ? ` (${money.format(Math.round(building.coaster.cost / 2))})` : ''}. Undo with Ctrl+Z.`}>
           Demolish

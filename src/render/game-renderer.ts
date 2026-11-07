@@ -38,6 +38,8 @@ export interface RendererStats {
   rotation: Rotation;
   zoom: number;
   hoveredTile: TileCoord | null;
+  /** Coaster the camera is following, or null. */
+  watching: number | null;
 }
 
 export type TilePointerEvent = { kind: 'down' | 'move' | 'up'; tile: TileCoord | null; shift: boolean };
@@ -225,6 +227,20 @@ export class GameRenderer {
     this.rotation = nextRotation(this.rotation, direction);
     this.emit();
   }
+
+  /** Follow a coaster's train with the camera (null stops). Moving the camera by hand also stops. */
+  watch(id: number | null): void {
+    if (this.watching === id) return;
+    this.watching = id;
+    if (id !== null && this.zoom < 2.5) {
+      this.zoom = 2.5;
+      this.updateProjection();
+    }
+    this.emit();
+  }
+
+  private watching: number | null = null;
+  private readonly watchPoint = new THREE.Vector3();
 
   zoomBy(factor: number): void {
     this.cameraMoved = true;
@@ -439,7 +455,10 @@ export class GameRenderer {
     const { width, height } = this.park.terrain;
     this.target.x = clamp(this.target.x + rx * right - fx * down, 0, width);
     this.target.z = clamp(this.target.z + rz * right - fz * down, 0, height);
-    if (right !== 0 || down !== 0) this.cameraMoved = true;
+    if (right !== 0 || down !== 0) {
+      this.cameraMoved = true;
+      this.watch(null);
+    }
   }
 
   // ---- per frame ---------------------------------------------------------
@@ -518,6 +537,23 @@ export class GameRenderer {
       this.pointerMoved = true;
     }
 
+    // Follow a train: ease the view toward the front car.
+    if (this.watching !== null) {
+      const p = this.coasterLayer.trainPosition(this.watching, this.watchPoint);
+      if (!p) this.watch(null);
+      else {
+        const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * 4);
+        this.target.x += (p.x - this.target.x) * k;
+        this.target.y += (p.y - this.target.y) * k;
+        this.target.z += (p.z - this.target.z) * k;
+        this.pointerMoved = true;
+      }
+    } else if (this.target.y !== 2) {
+      // Settle back to the usual view height after watching.
+      this.target.y += (2 - this.target.y) * Math.min(1, dt * 4);
+      if (Math.abs(this.target.y - 2) < 0.01) this.target.y = 2;
+    }
+
     // Smooth rotation toward the target view.
     const goal = rotationYaw(this.rotation);
     if (Math.abs(this.yaw - goal) > 1e-4) this.pointerMoved = true;
@@ -579,7 +615,7 @@ export class GameRenderer {
   }
 
   private emit(): void {
-    const stats: RendererStats = { fps: this.fps, rotation: this.rotation, zoom: this.zoom, hoveredTile: this.hovered };
+    const stats: RendererStats = { fps: this.fps, rotation: this.rotation, zoom: this.zoom, hoveredTile: this.hovered, watching: this.watching };
     for (const l of this.listeners) l(stats);
   }
 }

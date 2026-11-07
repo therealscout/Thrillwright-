@@ -72,6 +72,8 @@ export interface BuildingStats {
   id: number;
   queue: number;
   riders: number;
+  /** Look (shirt and skin colours) of each guest on board, for drawing riders. */
+  looks?: number[];
   /** 0..1 progress through the current ride cycle; 0 while loading. */
   phase: number;
   customers: number;
@@ -151,6 +153,8 @@ interface BuildingRuntime {
   timer: number;
   queue: number;
   riders: number;
+  /** Looks of the guests on board. */
+  looks: number[];
   customers: number;
   revenue: number;
   reliability: number;
@@ -308,6 +312,7 @@ export class SimCore {
         id: b.def.id,
         queue: b.queue,
         riders: b.riders,
+        looks: b.riders ? b.looks : undefined,
         phase: b.running ? Math.min(b.timer / b.def.cycle, 1) : 0,
         customers: b.customers,
         revenue: b.revenue,
@@ -756,6 +761,7 @@ export class SimCore {
     for (const i of boarding) g.state[i] = GuestState.Riding;
     b.queue -= boarding.length;
     b.riders = boarding.length;
+    b.looks = boarding.map((i) => g.look[i] as number);
     b.running = true;
     b.timer = 0;
   }
@@ -779,6 +785,7 @@ export class SimCore {
       g.rides[i] = (g.rides[i] as number) + 1;
     }
     b.riders = 0;
+    b.looks = [];
     b.running = false;
     b.timer = 0;
     // Every run wears the ride a little; worn rides break down more often.
@@ -796,7 +803,7 @@ export class SimCore {
         def.id,
         old
           ? { ...old, def, dist }
-          : { def, dist, running: false, timer: 0, queue: 0, riders: 0, customers: 0, revenue: 0, reliability: 100, broken: false, downtime: 0, mechanic: 0 },
+          : { def, dist, running: false, timer: 0, queue: 0, riders: 0, looks: [], customers: 0, revenue: 0, reliability: 100, broken: false, downtime: 0, mechanic: 0 },
       );
     }
     this.buildings = next;

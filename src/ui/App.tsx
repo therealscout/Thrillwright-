@@ -261,7 +261,12 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
             onPrice={(v) => park.setPrice(selected.id, v)}
             onToggleOpen={() => park.setOpen(selected.id, !selected.open)}
             onDemolish={() => park.demolish(selected.id)}
-            onClose={() => tools.select(null)}
+            onClose={() => {
+              game.watch(null);
+              tools.select(null);
+            }}
+            watching={stats?.watching === selected.id}
+            onWatch={(on) => game.watch(on ? selected.id : null)}
           />
         )}
         {showBuild && (

@@ -8,6 +8,7 @@ import type { Building } from '../core/buildings';
 import { COASTER_CARS, coasterEntrance, endState, type CoasterDesign } from '../core/coaster';
 import { runTest, trainPosition } from '../core/coaster-physics';
 import { HEIGHT_STEP } from '../core/grid';
+import { SHIRTS, SKINS } from './guest-layer';
 import { tileMaxHeight, type Terrain } from '../core/terrain';
 import { FORWARD, sampleTrack, STATION_LENGTH, type TrackPoint } from '../core/track';
 import type { BuildingStats } from '../sim/sim-core';
@@ -195,27 +196,77 @@ function buildStation(design: CoasterDesign, side: -1 | 1, terrain: Terrain): TH
   return g;
 }
 
-/** One coaster car: a low body with two rows of seats, facing +z. */
-function buildCar(color: string, lead: boolean): THREE.Group {
+/** A seated rider: body, head and two arms that go up on the big moments. */
+interface Rider {
+  group: THREE.Group;
+  shirt: THREE.Mesh;
+  skin: THREE.Mesh[];
+  arms: THREE.Group[];
+  look: number;
+}
+
+const torsoGeometry = new THREE.BoxGeometry(0.11, 0.13, 0.08);
+const headGeometry = new THREE.IcosahedronGeometry(0.058, 0);
+const armGeometry = new THREE.BoxGeometry(0.035, 0.12, 0.035).translate(0, 0.06, 0);
+
+function buildRider(): Rider {
+  const group = new THREE.Group();
+  group.name = 'rider';
+  const shirt = new THREE.Mesh(torsoGeometry, mat(SHIRTS[0] as string));
+  shirt.position.y = 0.075;
+  shirt.castShadow = true;
+  const head = new THREE.Mesh(headGeometry, mat(SKINS[0] as string));
+  head.position.y = 0.2;
+  group.add(shirt, head);
+  const skin: THREE.Mesh[] = [head];
+  const arms: THREE.Group[] = [];
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.07, 0.12, 0);
+    const arm = new THREE.Mesh(armGeometry, mat(SKINS[0] as string));
+    pivot.add(arm);
+    pivot.rotation.x = Math.PI * 0.85; // resting: hands down on the lap bar
+    group.add(pivot);
+    skin.push(arm);
+    arms.push(pivot);
+  }
+  group.visible = false;
+  return { group, shirt, skin, arms, look: -1 };
+}
+
+/** Colour a rider like the guest sitting there (same palettes as the crowd). */
+function dressRider(r: Rider, look: number): void {
+  if (r.look === look) return;
+  r.look = look;
+  r.shirt.material = mat(SHIRTS[look % SHIRTS.length] as string);
+  const skin = mat(SKINS[Math.floor(look / SHIRTS.length) % SKINS.length] as string);
+  for (const m of r.skin) m.material = skin;
+}
+
+/** One coaster car: a low body with two rows of two seats, facing +z. */
+function buildCar(color: string, lead: boolean, riders: Rider[]): THREE.Group {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.16, 0.54), mat(color));
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.16, 0.56), mat(color));
   body.position.y = 0.16;
   body.castShadow = true;
   g.add(body);
-  for (const z of [-0.12, 0.14]) {
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.06), mat('#2b2d42'));
-    seat.position.set(0, 0.3, z - 0.08);
-    g.add(seat);
+  for (const z of [-0.13, 0.14]) {
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.16, 0.05), mat('#2b2d42'));
+    back.position.set(0, 0.3, z - 0.1);
+    g.add(back);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.03, 0.03), mat('#ffd166'));
+    bar.position.set(0, 0.33, z + 0.09);
+    g.add(bar);
     for (const x of [-0.1, 0.1]) {
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), mat('#f1c27d'));
-      head.position.set(x, 0.38, z);
-      head.name = 'rider';
-      g.add(head);
+      const r = buildRider();
+      r.group.position.set(x, 0.24, z);
+      g.add(r.group);
+      riders.push(r);
     }
   }
   if (lead) {
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.12), mat('#ffd166'));
-    nose.position.set(0, 0.15, 0.32);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.12), mat('#ffd166'));
+    nose.position.set(0, 0.15, 0.33);
     g.add(nose);
   }
   return g;
@@ -229,7 +280,10 @@ interface Entry {
   duration: number;
   cycle: number;
   train: THREE.Group[];
-  riders: THREE.Object3D[];
+  /** Seats in boarding order: front car first. */
+  riders: Rider[];
+  /** How far each car's riders have their arms up, 0..1. */
+  cheer: number[];
   time: number;
   stationS: number;
 }
@@ -276,8 +330,13 @@ export class CoasterLayer {
         else e.time += (target - e.time) * Math.min(1, dt * 2);
       }
       const head = running ? trainPosition(e.timeline, Math.min(e.time, e.duration)) : e.stationS;
-      for (const r of e.riders) r.visible = running ? (s as BuildingStats).riders > 0 : (s?.queue ?? 0) > 0;
-      this.placeTrain(e, head);
+      const looks = running ? (s as BuildingStats).looks ?? [] : [];
+      const count = running ? Math.min((s as BuildingStats).riders, e.riders.length) : 0;
+      e.riders.forEach((r, i) => {
+        r.group.visible = i < count;
+        if (i < count) dressRider(r, looks[i] ?? i * 7);
+      });
+      this.placeTrain(e, head, dt);
     }
   }
 
@@ -308,22 +367,21 @@ export class CoasterLayer {
     group.add(buildStation(info, info.side, terrain));
     const run = runTest(info);
     const train: THREE.Group[] = [];
-    const riders: THREE.Object3D[] = [];
+    const riders: Rider[] = [];
     for (let i = 0; i < COASTER_CARS; i++) {
-      const car = buildCar(i % 2 ? '#118ab2' : '#ef476f', i === 0);
-      car.traverse((o) => { if (o.name === 'rider') riders.push(o); });
+      const car = buildCar(i % 2 ? '#118ab2' : '#ef476f', i === 0, riders);
       train.push(car);
       group.add(car);
     }
     this.group.add(group);
     const stationS = run.timeline[0] ?? 0;
     const duration = run.timeline.length ? (run.timeline.length - 1) * 0.1 : 0;
-    const entry: Entry = { building: b, group, points, timeline: run.timeline, duration, cycle: info.ratings.duration + 4, train, riders, time: 0, stationS };
+    const entry: Entry = { building: b, group, points, timeline: run.timeline, duration, cycle: info.ratings.duration + 4, train, riders, cheer: train.map(() => 0), time: 0, stationS };
     this.placeTrain(entry, stationS);
     return entry;
   }
 
-  private placeTrain(e: Entry, head: number): void {
+  private placeTrain(e: Entry, head: number, dt = 0): void {
     if (e.points.length < 2) return;
     const f = this.frame;
     const r = new THREE.Vector3();
@@ -334,6 +392,27 @@ export class CoasterLayer {
       m.makeBasis(r, f.u, f.t);
       car.quaternion.setFromRotationMatrix(m);
       car.position.copy(f.p);
+      // Hands up going down a steep drop or upside down in a loop.
+      const thrill = f.t.y < -0.45 || f.u.y < 0.2;
+      const goal = thrill ? 1 : 0;
+      const c = (e.cheer[i] = (e.cheer[i] as number) + (goal - (e.cheer[i] as number)) * Math.min(1, dt * 6));
+      for (let k = i * 4; k < i * 4 + 4; k++) {
+        const rider = e.riders[k];
+        if (!rider?.group.visible) continue;
+        // Rest on the lap bar (forward and down) or reach straight up.
+        const lean = Math.PI * 0.85 * (1 - c) + 0.15 * c;
+        const sway = c * Math.sin(head * 3 + k) * 0.25;
+        (rider.arms[0] as THREE.Group).rotation.set(lean, 0, sway + c * 0.2);
+        (rider.arms[1] as THREE.Group).rotation.set(lean, 0, -sway - c * 0.2);
+      }
     });
+  }
+
+  /** Where the front of a coaster's train is now, or null (for the follow camera). */
+  trainPosition(id: number, out: THREE.Vector3): THREE.Vector3 | null {
+    const e = this.entries.get(id);
+    const car = e?.train[0];
+    if (!car) return null;
+    return out.copy(car.position);
   }
 }
