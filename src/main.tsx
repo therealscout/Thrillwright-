@@ -1,6 +1,7 @@
 import { render } from 'preact';
 import { buildingType } from './core/catalog';
 import { layTestGrid } from './game/bench';
+import { CoasterEditor } from './game/coaster-editor';
 import { Park } from './game/park';
 import { createStarterTerrain, starterLayout } from './game/starter-park';
 import { ToolController } from './game/tool-controller';
@@ -15,7 +16,9 @@ const uiRoot = document.getElementById('ui') as HTMLElement;
 const layout = starterLayout();
 const park = new Park(createStarterTerrain());
 const game = new GameRenderer(canvas, park, layout.entrance);
-const tools = new ToolController(park, game);
+const coaster = new CoasterEditor(park);
+const tools = new ToolController(park, game, coaster);
+game.setDraftSource(() => coaster.draft);
 const entrances = [layout.entrance, { tx: layout.entrance.tx - 1, ty: layout.entrance.ty }];
 /** Guest cap set by the performance panel, overriding normal demand. */
 let benchCap: number | null = null;
@@ -28,8 +31,9 @@ game.setBuildingStatsSource(() => sim.stats.buildings);
  * rating (milestone 6) and marketing (milestone 7) will feed in here later.
  */
 function parkDemand() {
-  const rides = park.buildings.filter((b) => buildingType(b.type).kind === 'ride').length;
-  const stalls = park.buildings.length - rides;
+  // A coaster draws a crowd like two flat rides.
+  const rides = park.buildings.reduce((n, b) => n + (b.coaster ? 2 : buildingType(b.type).kind === 'ride' ? 1 : 0), 0);
+  const stalls = park.buildings.filter((b) => buildingType(b.type).kind !== 'ride').length;
   return {
     arrivalRate: 0.4 + rides * 0.35 + stalls * 0.05,
     maxGuests: benchCap ?? 120 + rides * 220 + stalls * 30,
@@ -67,6 +71,6 @@ if (bench > 0) {
 }
 
 // Exposed for automated smoke tests and debugging in the console.
-(window as unknown as { thrillwright: unknown }).thrillwright = { game, park, tools, sim, devActions };
+(window as unknown as { thrillwright: unknown }).thrillwright = { game, park, tools, sim, coaster, devActions };
 
-render(<App game={game} park={park} tools={tools} sim={sim} dev={devActions} showHelp={!bench} />, uiRoot);
+render(<App game={game} park={park} tools={tools} coaster={coaster} sim={sim} dev={devActions} showHelp={!bench} />, uiRoot);

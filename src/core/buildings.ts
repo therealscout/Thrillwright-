@@ -4,6 +4,7 @@
  * outside the middle of its front side, which should be a path.
  */
 import { buildingType, type BuildingType } from './catalog';
+import { coasterEntrance, uniqueTiles, type CoasterInfo } from './coaster';
 import type { TileCoord } from './grid';
 import { cornerHeight, tileIndex, type Terrain } from './terrain';
 
@@ -19,11 +20,16 @@ export interface Building {
   facing: Facing;
   price: number;
   open: boolean;
+  /** Track rides only: the design, entrance side and test-run ratings. */
+  coaster?: CoasterInfo;
 }
+
+type Placed = { type: string; x: number; y: number; coaster?: CoasterInfo };
 
 export const FACING_NAMES = ['north', 'east', 'south', 'west'] as const;
 
-export function footprint(b: { type: string; x: number; y: number }): TileCoord[] {
+export function footprint(b: Placed): TileCoord[] {
+  if (b.coaster) return uniqueTiles(b.coaster);
   const size = buildingType(b.type).size;
   const tiles: TileCoord[] = [];
   for (let ty = b.y; ty < b.y + size; ty++) for (let tx = b.x; tx < b.x + size; tx++) tiles.push({ tx, ty });
@@ -31,7 +37,8 @@ export function footprint(b: { type: string; x: number; y: number }): TileCoord[
 }
 
 /** The tile guests stand on to enter or buy. */
-export function accessTile(b: { type: string; x: number; y: number; facing: Facing }): TileCoord {
+export function accessTile(b: Placed & { facing: Facing }): TileCoord {
+  if (b.coaster) return coasterEntrance(b.coaster, b.coaster.side);
   const size = buildingType(b.type).size;
   const mid = Math.floor(size / 2);
   switch (b.facing) {
@@ -83,6 +90,7 @@ export function setBlocked(t: Terrain, b: Building, value: 0 | 1): void {
 /** The building covering a tile, if any. */
 export function buildingAt(buildings: readonly Building[], tile: TileCoord): Building | undefined {
   return buildings.find((b) => {
+    if (b.coaster) return footprint(b).some((u) => u.tx === tile.tx && u.ty === tile.ty);
     const size = buildingType(b.type).size;
     return tile.tx >= b.x && tile.ty >= b.y && tile.tx < b.x + size && tile.ty < b.y + size;
   });

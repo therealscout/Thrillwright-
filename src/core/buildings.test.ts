@@ -12,6 +12,8 @@ function land() {
 describe('catalog', () => {
   it('has rides with ratings and stalls with effects', () => {
     for (const type of CATALOG) {
+      // Track rides are rated by their test run instead.
+      if (type.custom) continue;
       if (type.kind === 'ride') {
         expect(type.capacity).toBeGreaterThan(0);
         expect(type.cycle).toBeGreaterThan(0);

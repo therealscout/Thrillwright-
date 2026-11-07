@@ -26,6 +26,7 @@ export class BuildingLayer {
   sync(buildings: readonly Building[], terrain: Terrain): void {
     const seen = new Set<number>();
     for (const b of buildings) {
+      if (b.coaster) continue; // drawn by the coaster layer
       seen.add(b.id);
       let entry = this.entries.get(b.id);
       if (!entry || entry.building.type !== b.type) {

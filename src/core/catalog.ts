@@ -26,6 +26,8 @@ export interface BuildingType {
   cycle?: number;
   // Stalls only: how much of a need one purchase satisfies (0..255).
   satisfies?: number;
+  /** Track rides: designed in the coaster builder, priced per piece and rated by a test run. */
+  custom?: boolean;
 }
 
 export const CATALOG: BuildingType[] = [
@@ -53,6 +55,10 @@ export const CATALOG: BuildingType[] = [
     id: 'drop-tower', name: 'Drop Tower', kind: 'ride', size: 3, cost: 2400, price: 4,
     description: 'Up slowly, down very fast. Thrill-seekers love it.',
     excitement: 5.8, intensity: 7.5, nausea: 3.6, capacity: 12, cycle: 30,
+  },
+  {
+    id: 'steel-coaster', name: 'Steel Coaster', kind: 'ride', size: 1, cost: 0, price: 5, custom: true,
+    description: 'Design your own track: lift hills, drops, turns and loops. Priced per piece.',
   },
   {
     id: 'burger-stand', name: 'Burger Stand', kind: 'food', size: 1, cost: 300, price: 3,

@@ -4,6 +4,7 @@
  */
 import { checkPlacement, setBlocked, type Building, type Facing } from '../core/buildings';
 import { buildingType } from '../core/catalog';
+import { checkDesign, checkEntrance, type CoasterInfo } from '../core/coaster';
 import { STARTING_CASH } from '../core/costs';
 import type { TileCoord } from '../core/grid';
 import { cloneTerrain, restoreTerrain, type Terrain } from '../core/terrain';
@@ -18,7 +19,8 @@ export type ToolId =
   | 'path'
   | 'remove-path'
   | 'buy-land'
-  | 'build';
+  | 'build'
+  | 'coaster';
 
 interface Snapshot {
   terrain: Terrain;
@@ -95,6 +97,7 @@ export class Park {
       case 'buy-land': result = buyLand(t, tiles, this.cash); break;
       case 'inspect':
       case 'build':
+      case 'coaster':
         return { ok: false, cost: 0 };
     }
     if (result.ok) this.spend(result.cost);
@@ -137,11 +140,52 @@ export class Park {
     return { ok: true, cost: info.cost, building, connected: check.connected };
   }
 
+  /**
+   * Pay for (or refund) track while a coaster is being designed. This is
+   * outside the undo history; openCoaster() records the whole price as one
+   * step once the ride is finished.
+   */
+  payForDraft(amount: number): boolean {
+    if (amount > this.cash) return false;
+    this.adjustCash(-amount);
+    return true;
+  }
+
+  /**
+   * Turn a finished, tested design into a ride guests can use, as one undo
+   * step. The track was already paid for with payForDraft(), so undoing it
+   * refunds `info.cost`.
+   */
+  openCoaster(info: CoasterInfo): EditResult & { building?: Building; connected?: boolean } {
+    const track = checkDesign(this.terrain, info);
+    if (!track.ok) return { ok: false, cost: 0, reason: track.reason };
+    const entrance = checkEntrance(this.terrain, info, info.side);
+    if (!entrance.ok) return { ok: false, cost: 0, reason: entrance.reason };
+    this.beginStroke();
+    const building: Building = {
+      id: this.nextBuildingId++,
+      type: 'steel-coaster',
+      x: info.start.tx,
+      y: info.start.ty,
+      facing: info.start.dir,
+      price: buildingType('steel-coaster').price,
+      open: true,
+      coaster: info,
+    };
+    this.buildings.push(building);
+    setBlocked(this.terrain, building, 1);
+    this.strokeSpent = info.cost;
+    this.strokeChanged = true;
+    this.endStroke();
+    this.changed();
+    return { ok: true, cost: info.cost, building, connected: entrance.connected };
+  }
+
   /** Knock a building down for a partial refund, as its own undo step. */
   demolish(id: number): EditResult {
     const building = this.buildings.find((b) => b.id === id);
     if (!building) return { ok: false, cost: 0, reason: 'Nothing to demolish.' };
-    const refund = Math.round(buildingType(building.type).cost * DEMOLISH_REFUND);
+    const refund = Math.round((building.coaster?.cost ?? buildingType(building.type).cost) * DEMOLISH_REFUND);
     this.beginStroke();
     setBlocked(this.terrain, building, 0);
     this.buildings = this.buildings.filter((b) => b.id !== id);

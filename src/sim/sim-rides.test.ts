@@ -124,3 +124,20 @@ describe('rides', () => {
     expect(g.state[1]).toBe(GuestState.Leaving);
   });
 });
+
+describe('coasters in the simulation', () => {
+  it('thrill-seekers prefer an exciting coaster to a gentle ride', () => {
+    const gentle = ride({ id: 1, ax: 12, excitement: 2, intensity: 1, nausea: 0.5 });
+    const coaster = ride({ id: 2, ax: 20, excitement: 6, intensity: 6, nausea: 2.5, capacity: 16, cycle: 28 });
+    const sim = new SimCore(street([gentle, coaster]), [{ tx: 0, ty: 5 }], { arrivalRate: 0, maxGuests: 40 });
+    sim.spawnScattered(30);
+    const g = sim.guests;
+    for (let i = 0; i < g.count; i++) {
+      g.intensityPref[i] = 70;
+      g.stay[i] = 1000;
+    }
+    run(sim, 60);
+    const [a, b] = sim.stats().buildings;
+    expect((b?.customers ?? 0) + (b?.queue ?? 0) + (b?.riders ?? 0)).toBeGreaterThan((a?.customers ?? 0) + (a?.queue ?? 0) + (a?.riders ?? 0));
+  });
+});

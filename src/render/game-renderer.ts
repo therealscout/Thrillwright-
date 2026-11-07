@@ -15,6 +15,8 @@ import type { Building } from '../core/buildings';
 import type { GuestSnapshot } from '../sim/sim-client';
 import type { BuildingStats } from '../sim/sim-core';
 import { BuildingLayer } from './building-layer';
+import { CoasterLayer } from './coaster-layer';
+import type { CoasterDesign } from '../core/coaster';
 import { GuestLayer } from './guest-layer';
 import { palette } from './palette';
 import {
@@ -67,6 +69,9 @@ export class GameRenderer {
   private readonly gate: THREE.Group;
   private readonly guests = new GuestLayer();
   private readonly buildingLayer = new BuildingLayer();
+  private readonly coasterLayer = new CoasterLayer();
+  private draftSource: (() => { design: CoasterDesign | null; version: number }) | null = null;
+  private trackGhost: { design: CoasterDesign; valid: boolean } | null = null;
   private guestSource: (() => GuestSnapshot | null) | null = null;
   private buildingStatsSource: (() => readonly BuildingStats[]) | null = null;
 
@@ -154,7 +159,7 @@ export class GameRenderer {
     this.gate.position.set(entrance.tx, 0, entrance.ty + 0.5);
     this.scene.add(this.gate);
     this.scene.add(this.guests.mesh);
-    this.scene.add(this.buildingLayer.group);
+    this.scene.add(this.buildingLayer.group, this.coasterLayer.group);
 
     this.bindInput();
     this.resize();
@@ -186,6 +191,16 @@ export class GameRenderer {
   /** Preview of a building being placed, or null. */
   setGhost(ghost: { type: string; x: number; y: number; facing: Building['facing']; valid: boolean } | null): void {
     this.buildingLayer.setGhost(ghost, this.park.terrain);
+  }
+
+  /** Preview of a coaster station about to be placed, or null. */
+  setTrackGhost(design: CoasterDesign | null, valid: boolean): void {
+    this.trackGhost = design ? { design, valid } : null;
+  }
+
+  /** Where to read the coaster design being edited from each frame. */
+  setDraftSource(source: () => { design: CoasterDesign | null; version: number }): void {
+    this.draftSource = source;
   }
 
   rotate(direction: 1 | -1): void {
@@ -226,6 +241,7 @@ export class GameRenderer {
     swap(this.paths, buildPathGeometry(t));
     this.placeTrees(t);
     this.buildingLayer.sync(this.park.buildings, t);
+    this.coasterLayer.sync(this.park.buildings, t);
     this.gate.position.y = tileCentreY(t, Math.floor(this.gate.position.x), Math.floor(this.gate.position.z));
     this.builtVersion = this.park.version;
   }
@@ -440,7 +456,16 @@ export class GameRenderer {
     }
 
     this.guests.update(this.guestSource?.() ?? null, now);
-    this.buildingLayer.update(dt, this.buildingStatsSource?.() ?? []);
+    const buildingStats = this.buildingStatsSource?.() ?? [];
+    this.buildingLayer.update(dt, buildingStats);
+    this.coasterLayer.update(dt, buildingStats);
+    const draft = this.draftSource?.();
+    if (this.trackGhost) {
+      const g = this.trackGhost.design.start;
+      this.coasterLayer.setDraft(this.trackGhost.design, this.park.terrain, this.trackGhost.valid, g.tx * 1000 + g.ty);
+    } else {
+      this.coasterLayer.setDraft(draft?.design ?? null, this.park.terrain, true, draft?.version ?? 0);
+    }
     this.renderer.render(this.scene, this.camera);
 
     this.frames++;

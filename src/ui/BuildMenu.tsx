@@ -36,8 +36,9 @@ export function BuildMenu({ cash, current, onPick, onClose }: Props) {
                   title={t.description}
                 >
                   <span class="item-name">{t.name}</span>
-                  <span class="item-cost">{money.format(t.cost)}</span>
-                  {t.kind === 'ride' && (
+                  <span class="item-cost">{t.custom ? 'per piece' : money.format(t.cost)}</span>
+                  {t.custom && <span class="item-stats">{t.description}</span>}
+                  {t.kind === 'ride' && !t.custom && (
                     <span class="item-stats">
                       Excitement {rating(t.excitement)} · Intensity {rating(t.intensity)} · Nausea {rating(t.nausea)}
                     </span>

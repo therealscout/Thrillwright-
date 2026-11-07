@@ -7,6 +7,9 @@ import { buildingType } from '../core/catalog';
 import type { TileCoord } from '../core/grid';
 import { tileIndex } from '../core/terrain';
 import { brushTiles } from '../core/terrain-edit';
+import type { CoasterDesign } from '../core/coaster';
+import { uniqueTiles } from '../core/coaster';
+import type { CoasterEditor } from './coaster-editor';
 import type { Park, ToolId } from './park';
 
 export interface ToolInfo {
@@ -29,6 +32,7 @@ export const TOOLS: ToolInfo[] = [
   { id: 'remove-path', label: 'Remove path', hint: 'Click and drag to remove footpath', key: '6', paints: true, usesBrush: true },
   { id: 'buy-land', label: 'Buy land', hint: 'Click and drag to buy land next to your park', key: '7', paints: true, usesBrush: true },
   { id: 'build', label: 'Build', hint: 'Click to place. R rotates the entrance; face it onto a path', key: 'b', paints: false, usesBrush: false },
+  { id: 'coaster', label: 'Coaster builder', hint: 'Click flat land for the station. R turns it', key: 'c', paints: false, usesBrush: false },
 ];
 
 export const BRUSH_SIZES = [1, 3, 5, 7] as const;
@@ -51,6 +55,8 @@ export interface ToolState {
 export interface BrushView {
   setBrush(tiles: TileCoord[], valid: boolean): void;
   setGhost?(ghost: { type: string; x: number; y: number; facing: Facing; valid: boolean } | null): void;
+  /** Preview of a coaster station about to be placed. */
+  setTrackGhost?(design: CoasterDesign | null, valid: boolean): void;
 }
 
 export class ToolController {
@@ -66,7 +72,21 @@ export class ToolController {
   private selected: number | null = null;
   private readonly listeners = new Set<(s: ToolState) => void>();
 
-  constructor(private readonly park: Park, private readonly view: BrushView) {
+  constructor(
+    private readonly park: Park,
+    private readonly view: BrushView,
+    private readonly coaster?: CoasterEditor,
+  ) {
+    coaster?.subscribe((s) => {
+      // Leave the coaster tool once the builder closes (opened or cancelled).
+      if (s.phase === 'idle' && this.tool === 'coaster') {
+        this.tool = 'inspect';
+        this.refreshBrush();
+        this.emit();
+      } else if (s.phase === 'track' && this.tool === 'coaster') {
+        this.refreshBrush();
+      }
+    });
     park.onChange(() => {
       if (this.selected !== null && !park.buildings.some((b) => b.id === this.selected)) this.selected = null;
       this.refreshBrush();
@@ -100,13 +120,30 @@ export class ToolController {
       this.say('Pick something to build from the Build menu.', 'info');
       return;
     }
+    if (tool === 'coaster') {
+      this.startCoaster();
+      return;
+    }
     this.tool = tool;
+    this.refreshBrush();
+    this.emit();
+  }
+
+  /** Open the coaster builder (or go back to it). */
+  startCoaster(): void {
+    if (!this.coaster) return;
+    this.coaster.begin();
+    this.tool = 'coaster';
     this.refreshBrush();
     this.emit();
   }
 
   /** Choose a ride or stall and switch to the Build tool. */
   setBuildType(type: string): void {
+    if (buildingType(type).custom) {
+      this.startCoaster();
+      return;
+    }
     this.buildType = type;
     this.tool = 'build';
     this.refreshBrush();
@@ -146,6 +183,14 @@ export class ToolController {
       this.select(buildingAt(this.park.buildings, tile)?.id ?? null);
     } else if (kind === 'down' && tile && this.tool === 'build') {
       this.place(tile);
+    } else if (kind === 'down' && tile && this.tool === 'coaster') {
+      if (this.coaster?.state.phase === 'station') {
+        const r = this.coaster.placeStation(tile);
+        if (!r.ok && r.reason) this.say(r.reason);
+        else if (r.ok) this.say('Station placed. Now lay track from its far end.', 'info');
+      } else {
+        this.select(buildingAt(this.park.buildings, tile)?.id ?? null);
+      }
     } else if (kind === 'down' && tile && this.tool !== 'inspect') {
       this.dragging = true;
       this.park.beginStroke();
@@ -176,6 +221,11 @@ export class ToolController {
     if (ctrl) return false;
     if (k === 'r' && this.tool === 'build') {
       this.rotateFacing();
+      return true;
+    }
+    if (k === 'r' && this.tool === 'coaster' && this.coaster?.state.phase === 'station') {
+      this.coaster.rotateStation();
+      this.refreshBrush();
       return true;
     }
     if (k === 'escape' && this.selected !== null && this.tool === 'inspect') {
@@ -229,6 +279,19 @@ export class ToolController {
 
   private refreshBrush(): void {
     if (this.tool !== 'build' || !this.hovered) this.view.setGhost?.(null);
+    const placingStation = this.tool === 'coaster' && this.coaster?.state.phase === 'station';
+    if (!placingStation || !this.hovered) this.view.setTrackGhost?.(null, true);
+    if (this.tool === 'coaster') {
+      if (placingStation && this.hovered && this.coaster) {
+        const { design, check } = this.coaster.stationAt(this.hovered);
+        const { width, height } = this.park.terrain;
+        this.view.setBrush(uniqueTiles(design).filter(({ tx, ty }) => tx >= 0 && ty >= 0 && tx < width && ty < height), check.ok);
+        this.view.setTrackGhost?.(design, check.ok);
+      } else {
+        this.view.setBrush([], true);
+      }
+      return;
+    }
     if (!this.hovered || this.tool === 'inspect') {
       this.view.setBrush([], true);
       return;
@@ -253,6 +316,11 @@ export class ToolController {
         ? tiles.some(({ tx, ty }) => !t.owned[tileIndex(t, tx, ty)])
         : tiles.some(({ tx, ty }) => t.owned[tileIndex(t, tx, ty)] === 1);
     this.view.setBrush(tiles, valid);
+  }
+
+  /** Show a feedback message (used by panels such as the coaster builder). */
+  notify(text: string, tone: 'error' | 'info' = 'error'): void {
+    this.say(text, tone);
   }
 
   private say(text: string, tone: 'error' | 'info' = 'error'): void {

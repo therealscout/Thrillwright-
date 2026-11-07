@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { COSTS } from '../core/costs';
+import type { BuilderState, CoasterEditor } from '../game/coaster-editor';
 import type { Park } from '../game/park';
 import { BRUSH_SIZES, TOOLS, type ToolController, type ToolState } from '../game/tool-controller';
 import type { GameRenderer, RendererStats } from '../render/game-renderer';
@@ -7,6 +8,7 @@ import type { SimClient } from '../sim/sim-client';
 import type { SimStats } from '../sim/sim-core';
 import { BuildingInfo } from './BuildingInfo';
 import { BuildMenu } from './BuildMenu';
+import { CoasterBuilder } from './CoasterBuilder';
 import { count, money } from './format';
 import { ToolIcon } from './icons';
 import { ParkPanel } from './ParkPanel';
@@ -33,12 +35,13 @@ interface AppProps {
   game: GameRenderer;
   park: Park;
   tools: ToolController;
+  coaster: CoasterEditor;
   sim: SimClient;
   dev: DevActions;
   showHelp?: boolean;
 }
 
-export function App({ game, park, tools, sim, dev, showHelp: helpAtStart = true }: AppProps) {
+export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStart = true }: AppProps) {
   const [stats, setStats] = useState<RendererStats | null>(null);
   const [tool, setTool] = useState<ToolState>(tools.state);
   const [simStats, setSimStats] = useState<SimStats>(sim.stats);
@@ -48,10 +51,12 @@ export function App({ game, park, tools, sim, dev, showHelp: helpAtStart = true 
   const [showBuild, setShowBuild] = useState(false);
   const [showPark, setShowPark] = useState(false);
   const [, setVersion] = useState(park.version);
+  const [builder, setBuilder] = useState<BuilderState>(coaster.state);
 
   useEffect(() => game.onStats(setStats), [game]);
   useEffect(() => tools.subscribe(setTool), [tools]);
   useEffect(() => sim.onStats(setSimStats), [sim]);
+  useEffect(() => coaster.subscribe(setBuilder), [coaster]);
   useEffect(() => park.onChange(() => setVersion(park.version)), [park]);
 
   // Show each feedback message briefly.
@@ -89,6 +94,14 @@ export function App({ game, park, tools, sim, dev, showHelp: helpAtStart = true 
       </div>
 
       <div class="side">
+        {builder.phase !== 'idle' && (
+          <CoasterBuilder
+            editor={coaster}
+            state={builder}
+            onPlaceStation={() => tools.startCoaster()}
+            onMessage={(text, tone) => tools.notify(text, tone)}
+          />
+        )}
         {selected && (
           <BuildingInfo
             building={selected}
@@ -103,7 +116,10 @@ export function App({ game, park, tools, sim, dev, showHelp: helpAtStart = true 
           <BuildMenu
             cash={tool.cash}
             current={tool.buildType}
-            onPick={(t) => tools.setBuildType(t.id)}
+            onPick={(t) => {
+              tools.setBuildType(t.id);
+              if (t.custom) setShowBuild(false);
+            }}
             onClose={() => setShowBuild(false)}
           />
         )}
@@ -135,7 +151,8 @@ export function App({ game, park, tools, sim, dev, showHelp: helpAtStart = true 
       <div class="dock">
         {active && active.id !== 'inspect' && (
           <div class="hint" data-testid="hint">
-            <strong>{active.id === 'build' ? buildName || 'Build' : active.label}</strong> · {active.hint}
+            <strong>{active.id === 'build' ? buildName || 'Build' : active.label}</strong> ·{' '}
+            {active.id === 'coaster' && builder.phase === 'track' ? 'Lay track with the pieces in the builder panel' : active.hint}
             {active.id === 'build' && <span class="cost"> · entrance faces {FACING[tool.facing]}</span>}
             {TOOL_COST[active.id] && <span class="cost"> · {TOOL_COST[active.id]}</span>}
           </div>
@@ -204,6 +221,7 @@ export function App({ game, park, tools, sim, dev, showHelp: helpAtStart = true 
             <li>Scroll or <kbd>+</kbd>/<kbd>−</kbd>: zoom · <kbd>Q</kbd>/<kbd>E</kbd>: rotate</li>
             <li><kbd>1</kbd>–<kbd>7</kbd>: land tools · <kbd>Esc</kbd>: look</li>
             <li>Rides &amp; stalls menu, <kbd>R</kbd>: turn entrance</li>
+            <li><kbd>C</kbd>: coaster builder</li>
             <li>Look tool: click a ride for details</li>
             <li><kbd>[</kbd>/<kbd>]</kbd>: brush · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd>: undo, redo</li>
           </ul>

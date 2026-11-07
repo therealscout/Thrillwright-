@@ -11,6 +11,7 @@ const paths: Record<ToolId, string> = {
   'remove-path': 'M8 21L10 3M16 21L14 3M5 8l14 8M19 8L5 16',
   'buy-land': 'M4 20V9l8-5 8 5v11zM9 20v-6h6v6M12 9v.01',
   build: 'M3 21h18M5 21V11l7-7 7 7v10M9 21v-5h6v5M3 11l9-8 9 8',
+  coaster: 'M2 18c3 0 4-12 8-12s3 8 6 8 3-4 6-4M5 19v-5M10 19V8M15 19v-5M20 19v-7',
 };
 
 export function ToolIcon({ tool }: { tool: ToolId }) {

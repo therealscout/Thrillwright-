@@ -1,5 +1,6 @@
 import type { Building } from '../core/buildings';
 import { buildingType } from '../core/catalog';
+import { COASTER_SEATS } from '../core/coaster';
 import type { BuildingStats } from '../sim/sim-core';
 import { count, money, price, rating } from './format';
 
@@ -14,6 +15,11 @@ interface Props {
 
 export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolish, onClose }: Props) {
   const type = buildingType(building.type);
+  const r = building.coaster?.ratings;
+  const excitement = r?.excitement ?? type.excitement;
+  const intensity = r?.intensity ?? type.intensity;
+  const nausea = r?.nausea ?? type.nausea;
+  const capacity = r ? `${COASTER_SEATS} per ${r.duration + 4} s` : `${type.capacity} per ${type.cycle} s`;
   const isRide = type.kind === 'ride';
   const status = !building.open
     ? 'Closed'
@@ -34,11 +40,18 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
       <dl>
         {isRide && (
           <>
-            <dt>Excitement</dt><dd>{rating(type.excitement)}</dd>
-            <dt>Intensity</dt><dd>{rating(type.intensity)}</dd>
-            <dt>Nausea</dt><dd>{rating(type.nausea)}</dd>
+            <dt>Excitement</dt><dd data-testid="info-excitement">{rating(excitement)}</dd>
+            <dt>Intensity</dt><dd>{rating(intensity)}</dd>
+            <dt>Nausea</dt><dd>{rating(nausea)}</dd>
+            {r && (
+              <>
+                <dt>Top speed</dt><dd>{Math.round(r.maxSpeed * 3.6)} km/h</dd>
+                <dt>Length</dt><dd>{r.length} m</dd>
+                <dt>Inversions</dt><dd>{r.inversions}</dd>
+              </>
+            )}
             <dt>In queue</dt><dd data-testid="info-queue">{count.format(stats?.queue ?? 0)}</dd>
-            <dt>Capacity</dt><dd>{type.capacity} per {type.cycle} s</dd>
+            <dt>Capacity</dt><dd>{capacity}</dd>
           </>
         )}
         <dt>{isRide ? 'Riders so far' : 'Customers'}</dt><dd data-testid="info-customers">{count.format(stats?.customers ?? 0)}</dd>
@@ -54,7 +67,7 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
       )}
       <div class="row">
         <button type="button" onClick={onToggleOpen}>{building.open ? 'Close' : 'Open'}</button>
-        <button type="button" class="danger" onClick={onDemolish} title="Refunds half the build price. Undo with Ctrl+Z.">
+        <button type="button" class="danger" onClick={onDemolish} title={`Refunds half the build price${building.coaster ? ` (${money.format(Math.round(building.coaster.cost / 2))})` : ''}. Undo with Ctrl+Z.`}>
           Demolish
         </button>
       </div>

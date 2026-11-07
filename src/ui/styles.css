@@ -186,6 +186,9 @@ button.danger:hover:not(:disabled) { background: rgba(239, 71, 111, 0.35); }
 .panel .row { display: flex; gap: 6px; margin-bottom: 6px; }
 .panel .row button { flex: 1; font-size: 12px; }
 .panel .note { margin: 6px 0 0; color: var(--ui-muted); font-size: 12px; }
+.panel .note.warn { color: var(--ui-pink); }
+.piece-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+.piece-grid button { font-size: 12px; height: 32px; }
 
 .tool {
   display: flex;

@@ -4,6 +4,7 @@
  */
 import { accessTile } from '../core/buildings';
 import { buildingType } from '../core/catalog';
+import { COASTER_SEATS } from '../core/coaster';
 import { tileIndex } from '../core/terrain';
 import type { Park } from '../game/park';
 import type { FromWorker, ToWorker, WorldData } from './protocol';
@@ -90,6 +91,15 @@ export class SimClient {
     const buildings = this.park.buildings.map((b) => {
       const type = buildingType(b.type);
       const a = accessTile(b);
+      const r = b.coaster?.ratings;
+      if (r) {
+        return {
+          id: b.id, kind: type.kind, ax: a.tx, ay: a.ty, price: b.price, open: b.open,
+          excitement: r.excitement, intensity: r.intensity, nausea: r.nausea,
+          // The train's run plus a few seconds to unload in the station.
+          capacity: COASTER_SEATS, cycle: r.duration + 4, satisfies: 0,
+        };
+      }
       return {
         id: b.id,
         kind: type.kind,
