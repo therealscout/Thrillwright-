@@ -301,15 +301,15 @@ export function buyLand(t: Terrain, tiles: TileCoord[], budget: number): EditRes
   return { ok: true, cost };
 }
 
-/** Put a bin or bench on every path tile of the brush that has nothing on it yet. */
+/** Put a bin or bench on every path tile of the brush that doesn't have one yet (a tile can hold one of each). */
 export function placeItem(t: Terrain, tiles: TileCoord[], item: PathItem, budget: number): EditResult {
   const targets: number[] = [];
   let reason = 'Bins and benches go on paths.';
   for (const { tx, ty } of tiles) {
     const k = tileIndex(t, tx, ty);
     if (t.paths[k] !== 1 || !isOwned(t, tx, ty)) continue;
-    if (t.items[k] === item) {
-      reason = 'There is already one here.';
+    if ((t.items[k] as number) & item) {
+      reason = item === PathItem.Bin ? 'There is already a bin here.' : 'There is already a bench here.';
       continue;
     }
     targets.push(k);
@@ -317,6 +317,6 @@ export function placeItem(t: Terrain, tiles: TileCoord[], item: PathItem, budget
   if (targets.length === 0) return fail(reason);
   const cost = targets.length * (item === PathItem.Bin ? COSTS.bin : COSTS.bench);
   if (cost > budget) return { ok: false, cost, reason: 'Not enough cash.' };
-  for (const k of targets) t.items[k] = item;
+  for (const k of targets) t.items[k] = (t.items[k] as number) | item;
   return { ok: true, cost };
 }

@@ -19,7 +19,7 @@ import { demandFactor, ratingParts, targetRating, type RatingParts } from './rat
 import { StaffKind, StaffState, StaffStore } from './staff';
 import { Thought, ThoughtLog, type ThoughtEntry } from './thoughts';
 
-/** Path items, matching PathItem in core/terrain. */
+/** Path item bits, matching PathItem in core/terrain (a tile can have both). */
 const BIN = 1;
 const BENCH = 2;
 /** Pieces of litter a bin holds before it overflows. */
@@ -311,7 +311,7 @@ export class SimCore {
     // Litter only lies on paths; bins that were removed are gone.
     for (let k = 0; k < this.litter.length; k++) {
       if (!world.paths[k]) this.litter[k] = this.vomit[k] = 0;
-      if (world.items?.[k] !== BIN) this.binFill[k] = 0;
+      if (!((world.items?.[k] ?? 0) & BIN)) this.binFill[k] = 0;
     }
     this.rebuildDirtMap();
     const st = this.staff;
@@ -1145,7 +1145,7 @@ export class SimCore {
     }
 
     // Tired guests rest on benches.
-    if (w.items?.[k] === BENCH && (g.energy[i] as number) < 150) {
+    if (((w.items?.[k] ?? 0) & BENCH) && (g.energy[i] as number) < 150) {
       g.energy[i] = Math.min(255, (g.energy[i] as number) + 25);
       mood += 1;
       if (g.random(i) < 0.1) this.think_(i, Thought.NiceBench);
@@ -1167,7 +1167,7 @@ export class SimCore {
       const ny = d < 0 ? ty : ty + (DIRS[d] as readonly [number, number])[1];
       if (!isPath(w, nx, ny)) continue;
       const k = ny * w.width + nx;
-      if (items[k] === BIN && (this.binFill[k] as number) < BIN_CAPACITY) return k;
+      if (((items[k] as number) & BIN) && (this.binFill[k] as number) < BIN_CAPACITY) return k;
     }
     return -1;
   }
@@ -1183,7 +1183,7 @@ export class SimCore {
     const w = this.world;
     const targets: Array<{ tx: number; ty: number }> = [];
     for (let k = 0; k < this.litter.length; k++) {
-      const full = w.items?.[k] === BIN && (this.binFill[k] as number) >= BIN_CAPACITY * 0.75;
+      const full = ((w.items?.[k] ?? 0) & BIN) !== 0 && (this.binFill[k] as number) >= BIN_CAPACITY * 0.75;
       if (this.dirt(k) > 0 || full) targets.push({ tx: k % w.width, ty: Math.floor(k / w.width) });
     }
     this.dirtMap = buildDistanceMap(w, targets);
@@ -1359,7 +1359,7 @@ export class SimCore {
 
     // Arrived at a tile: start a job here?
     if (st.kind[i] === StaffKind.Handyman) {
-      const full = w.items?.[k] === BIN && (this.binFill[k] as number) > 0;
+      const full = ((w.items?.[k] ?? 0) & BIN) !== 0 && (this.binFill[k] as number) > 0;
       if (this.dirt(k) > 0 || full) {
         st.state[i] = StaffState.Working;
         st.timer[i] = 1.5;

@@ -54,7 +54,7 @@ export interface Terrain {
 /** Link bits for N, E, S, W (the same order as the neighbour offsets). */
 export const QUEUE_LINK = [1, 2, 4, 8] as const;
 
-/** Things that stand on a path tile. */
+/** Things that stand on a path tile, as bits: a tile can have a bin and a bench. */
 export const PathItem = {
   None: 0,
   Bin: 1,

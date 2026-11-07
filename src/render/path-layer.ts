@@ -108,11 +108,16 @@ export class PathLayer {
           if (open) { side = s; break; }
         }
         const [sx, sy] = SIDES[side] as readonly [number, number];
-        if (item === PathItem.Bin) {
-          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.4 + sy * 0.3, y, ty + 0.5 + sy * 0.4 - sx * 0.3);
+        // With both on one tile, the bench moves aside to make room for the bin.
+        const both = (item & PathItem.Bin) && (item & PathItem.Bench);
+        if (item & PathItem.Bin) {
+          const along = both ? 0.36 : 0.3;
+          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.4 + sy * along, y, ty + 0.5 + sy * 0.4 - sx * along);
           bins.push(new THREE.Matrix4().compose(pos, q.identity(), one));
-        } else if (item === PathItem.Bench) {
-          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.38, y, ty + 0.5 + sy * 0.38);
+        }
+        if (item & PathItem.Bench) {
+          const shift = both ? -0.12 : 0;
+          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.38 + sy * shift, y, ty + 0.5 + sy * 0.38 - sx * shift);
           // Face the middle of the path: the bench's back goes on the outside.
           const rot = new THREE.Quaternion().setFromAxisAngle(up, Math.atan2(-sx, -sy));
           benches.push(new THREE.Matrix4().compose(pos, rot, one));
