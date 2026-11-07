@@ -92,8 +92,9 @@ function digLake(t: Terrain, pcx: number, pcy: number, rx: number, ry: number): 
   for (let cy = pcy - ry; cy <= pcy + ry; cy++) {
     for (let cx = pcx - rx; cx <= pcx + rx; cx++) {
       if (cx < 0 || cy < 0 || cx > t.width || cy > t.height) continue;
-      const inner = Math.abs(cx - pcx) < rx && Math.abs(cy - pcy) < ry;
-      t.corners[cornerIndex(t, cx, cy)] = BASE_HEIGHT - (inner ? 2 : 1);
+      // The rim sits at the water line so the shore slopes in, one step deeper per ring.
+      const ring = Math.min(rx - Math.abs(cx - pcx), ry - Math.abs(cy - pcy));
+      t.corners[cornerIndex(t, cx, cy)] = BASE_HEIGHT - Math.min(ring, 2);
     }
   }
   for (let ty = pcy - ry; ty < pcy + ry; ty++) {

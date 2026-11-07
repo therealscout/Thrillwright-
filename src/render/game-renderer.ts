@@ -28,10 +28,10 @@ import {
   buildGridGeometry,
   buildPathGeometry,
   buildTerrainGeometry,
-  buildWaterGeometry,
   tileCentreY,
   tileFromFace,
 } from './terrain-mesh';
+import { buildWaterGeometry, createWaterMaterial, type WaterMaterial } from './water';
 
 export interface RendererStats {
   fps: number;
@@ -66,6 +66,7 @@ export class GameRenderer {
   private readonly ground: THREE.Mesh;
   private readonly grid: THREE.LineSegments;
   private readonly water: THREE.Mesh;
+  private readonly waterMaterial: WaterMaterial;
   private readonly paths: THREE.Mesh;
   private readonly brush: THREE.Mesh;
   private readonly brushMaterial: THREE.MeshBasicMaterial;
@@ -133,10 +134,8 @@ export class GameRenderer {
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({ color: palette.gridLine, transparent: true, opacity: 0.14 }),
     );
-    this.water = new THREE.Mesh(
-      new THREE.BufferGeometry(),
-      new THREE.MeshPhongMaterial({ color: palette.water, transparent: true, opacity: 0.88, shininess: 60, specular: 0x5a7f99 }),
-    );
+    this.waterMaterial = createWaterMaterial();
+    this.water = new THREE.Mesh(new THREE.BufferGeometry(), this.waterMaterial.material);
     this.water.receiveShadow = true;
     this.paths = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     this.paths.receiveShadow = true;
@@ -523,6 +522,7 @@ export class GameRenderer {
     this.lastTime = now;
 
     if (this.park.version !== this.builtVersion) this.rebuildWorld();
+    this.waterMaterial.tick(this.reduceMotion ? 0 : dt);
 
     // Keyboard panning.
     const speed = (PAN_SPEED / this.zoom) * dt;
