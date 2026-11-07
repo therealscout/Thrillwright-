@@ -30,12 +30,13 @@ export const TOOLS: ToolInfo[] = [
   { id: 'water-up', label: 'Add water', hint: 'Click to raise the water level; dig first for a lake', key: '3', paints: false, usesBrush: true },
   { id: 'water-down', label: 'Drain water', hint: 'Click to lower the water level', key: '4', paints: false, usesBrush: true },
   { id: 'path', label: 'Path', hint: 'Click and drag to lay footpath', key: '5', paints: true, usesBrush: true },
+  { id: 'queue', label: 'Queue', hint: "Drag from a ride's entrance to a path. Guests wait in line here", key: 'l', paints: true, usesBrush: false },
   { id: 'remove-path', label: 'Remove path', hint: 'Click and drag to remove footpath', key: '6', paints: true, usesBrush: true },
   { id: 'buy-land', label: 'Buy land', hint: 'Click and drag to buy land next to your park', key: '7', paints: true, usesBrush: true },
   { id: 'bin', label: 'Bin', hint: 'Click a path to put a litter bin on it', key: '8', paints: true, usesBrush: false },
   { id: 'bench', label: 'Bench', hint: 'Click a path to put a bench on it; tired guests rest here', key: '9', paints: true, usesBrush: false },
   { id: 'build', label: 'Build', hint: 'Click to place. R rotates the entrance; face it onto a path', key: 'b', paints: false, usesBrush: false },
-  { id: 'coaster', label: 'Coaster builder', hint: 'Click flat land for the station. R turns it', key: 'c', paints: false, usesBrush: false },
+  { id: 'coaster', label: 'Coasters', hint: 'Click flat land for the station. R turns it', key: 'c', paints: false, usesBrush: false },
 ];
 
 export const BRUSH_SIZES = [1, 3, 5, 7] as const;

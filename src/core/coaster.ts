@@ -173,7 +173,7 @@ export function checkEntrance(t: Terrain, design: CoasterDesign, side: -1 | 1): 
   if (t.blocked[k]) return { ok: false, reason: 'Something is in the way of the entrance.', connected: false };
   const onTrack = uniqueTiles(design).some((u) => u.tx === a.tx && u.ty === a.ty);
   if (onTrack && !t.paths[k]) return { ok: false, reason: 'The track is in the way of the entrance.', connected: false };
-  return { ok: true, connected: t.paths[k] === 1 };
+  return { ok: true, connected: (t.paths[k] as number) > 0 };
 }
 
 /** The pieces a station is made of. */

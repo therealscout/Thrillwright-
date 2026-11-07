@@ -72,6 +72,7 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
               </>
             )}
             <dt>In queue</dt><dd data-testid="info-queue">{count.format(stats?.queue ?? 0)}</dd>
+            <dt>Wait</dt><dd>{waitText(stats?.queue ?? 0, r ? seatsFor(building.coaster?.type) : type.capacity ?? 1, r ? r.duration + 4 : type.cycle ?? 30)}</dd>
             <dt>Capacity</dt><dd>{capacity}</dd>
             <dt>Reliability</dt><dd data-testid="info-reliability">{stats?.reliability ?? 100}%</dd>
             <dt>Downtime</dt><dd>{stats?.downtime ?? 0} s</dd>
@@ -128,4 +129,11 @@ export function rideHints(stats: BuildingStats, ticket: number, excitement: numb
   }
   if (r.queue >= 5) hints.push({ text: 'The queue is so long that guests are giving up on it.' });
   return hints;
+}
+
+/** Roughly how long someone joining the back of the queue waits. */
+function waitText(queue: number, perRun: number, cycle: number): string {
+  if (queue === 0) return 'None';
+  const seconds = Math.ceil(queue / Math.max(perRun, 1)) * cycle;
+  return seconds < 60 ? 'Under a minute' : `About ${Math.round(seconds / 60)} min`;
 }

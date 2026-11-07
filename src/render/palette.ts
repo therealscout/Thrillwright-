@@ -11,6 +11,8 @@ export const palette = {
   unowned: '#5d6b4f',
   path: '#d8c9b4',
   pathEdge: '#9c8b78',
+  queue: '#b8c4d6',
+  queueRail: '#3a86ff',
   water: '#2585c0',
   trunk: '#8a5a3b',
   leaves: '#3f9a4a',

@@ -223,7 +223,7 @@ export class CoasterEditor {
     this.changed();
     if (!this.template) return { ok: true };
     // A ready-made design opens straight away, entrance on the side with a path if there is one.
-    this.side = this.entranceSide(design) ?? 1;
+    this.side = this.entranceSide(design) ?? -1;
     const opened = this.open();
     if (!opened.ok) this.cancel();
     return opened;
@@ -232,7 +232,8 @@ export class CoasterEditor {
   /** The best side for a premade's entrance: one with a path, else any that fits. */
   private entranceSide(design: CoasterDesign): -1 | 1 | null {
     const t = this.park.terrain;
-    const sides = ([1, -1] as const).map((side) => ({ side, check: checkEntrance(t, design, side) })).filter((s) => s.check.ok);
+    // Ready-made circuits turn right, so the left side faces out of the loop.
+    const sides = ([-1, 1] as const).map((side) => ({ side, check: checkEntrance(t, design, side) })).filter((s) => s.check.ok);
     return (sides.find((s) => s.check.connected) ?? sides[0])?.side ?? null;
   }
 

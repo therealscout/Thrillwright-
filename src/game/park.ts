@@ -18,6 +18,7 @@ export type ToolId =
   | 'water-up'
   | 'water-down'
   | 'path'
+  | 'queue'
   | 'remove-path'
   | 'buy-land'
   | 'bin'
@@ -167,6 +168,7 @@ export class Park {
       case 'water-up': result = moveWater(t, tiles, 1, this.cash); break;
       case 'water-down': result = moveWater(t, tiles, -1, this.cash); break;
       case 'path': result = placePath(t, tiles, this.cash); break;
+      case 'queue': result = placePath(t, tiles, this.cash, 2); break;
       case 'remove-path': result = removePath(t, tiles); break;
       case 'buy-land': result = buyLand(t, tiles, this.cash); break;
       case 'bin': result = placeItem(t, tiles, PathItem.Bin, this.cash); break;

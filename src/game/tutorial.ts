@@ -100,8 +100,8 @@ export const TUTORIAL: TutorialStep[] = [
   {
     id: 'coaster',
     title: 'Build a coaster',
-    text: 'Open the Coaster builder, place a station on open ground, press "Build sample" (or lay your own), test it and open it.',
-    hint: 'Coaster builder (C)',
+    text: 'Open Coasters, place a station on open ground, press "Sample track" (or lay your own), test it and open it. Or pick a Ready-made design and drop it on the map.',
+    hint: 'Coasters (C)',
     done: (c) => c.park.buildings.some((b) => b.coaster !== undefined),
   },
   {

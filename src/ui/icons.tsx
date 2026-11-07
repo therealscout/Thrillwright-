@@ -9,6 +9,7 @@ const paths: Record<ToolId, string> = {
   'water-down': 'M12 3c3 4 6 7 6 10a6 6 0 0 1-12 0c0-3 3-6 6-10zM12 11v5M10 14l2 2 2-2',
   path: 'M8 21L10 3M16 21L14 3M12 6v2M12 11v2M12 16v2',
   'remove-path': 'M8 21L10 3M16 21L14 3M5 8l14 8M19 8L5 16',
+  queue: 'M4 20V6M20 20V6M4 9h16M4 15h16M9 9v6M15 9v6',
   'buy-land': 'M4 20V9l8-5 8 5v11zM9 20v-6h6v6M12 9v.01',
   build: 'M3 21h18M5 21V11l7-7 7 7v10M9 21v-5h6v5M3 11l9-8 9 8',
   bin: 'M6 7h12M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6',

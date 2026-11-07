@@ -214,8 +214,10 @@ button.danger:hover:not(:disabled) { background: rgba(239, 71, 111, 0.35); }
   justify-content: center;
   gap: 2px;
   height: 52px;
-  min-width: 64px;
+  min-width: 58px;
+  padding: 0 6px;
   font-size: 11px;
+  flex-shrink: 0;
 }
 .tool-label { white-space: nowrap; }
 .divider { width: 1px; align-self: stretch; background: var(--ui-border); margin: 0 2px; }

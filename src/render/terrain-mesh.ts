@@ -129,12 +129,15 @@ export function buildPathGeometry(t: Terrain): THREE.BufferGeometry {
   const colors: number[] = [];
   const top = new THREE.Color();
   const kerb = new THREE.Color(palette.pathEdge);
-  const isPath = (x: number, y: number) =>
-    x >= 0 && y >= 0 && x < t.width && y < t.height && t.paths[tileIndex(t, x, y)] === 1;
+  const kindAt = (x: number, y: number) => (x >= 0 && y >= 0 && x < t.width && y < t.height ? (t.paths[tileIndex(t, x, y)] as number) : 0);
+  const queueTop = new THREE.Color(palette.queue);
   const inset = 0.08;
   for (let ty = 0; ty < t.height; ty++) {
     for (let tx = 0; tx < t.width; tx++) {
-      if (!isPath(tx, ty)) continue;
+      const kind = kindAt(tx, ty);
+      if (!kind) continue;
+      // Paving joins neighbours of the same kind: queue lines read as their own lanes.
+      const isPath = (x: number, y: number) => kindAt(x, y) === kind;
       const h = tileCorners(t, tx, ty);
       // Kerb: the full tile, slightly lifted.
       pushTile(positions, cornerPoints(tx, ty, h, 0.03), h);
@@ -154,7 +157,8 @@ export function buildPathGeometry(t: Terrain): THREE.BufferGeometry {
       };
       const p = [at(x0, z0), at(x1, z0), at(x1, z1), at(x0, z1)];
       pushTile(positions, p, h);
-      top.set(palette.path).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.03);
+      if (kind === 2) top.copy(queueTop).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.03);
+      else top.set(palette.path).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.03);
       pushColor(colors, top, 6);
     }
   }

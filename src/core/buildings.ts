@@ -80,7 +80,7 @@ export function checkPlacement(t: Terrain, b: { type: string; x: number; y: numb
   }
   const a = accessTile(b);
   if (a.tx < 0 || a.ty < 0 || a.tx >= t.width || a.ty >= t.height) return fail('The entrance would face off the map.');
-  return { ok: true, connected: t.paths[tileIndex(t, a.tx, a.ty)] === 1 };
+  return { ok: true, connected: (t.paths[tileIndex(t, a.tx, a.ty)] as number) > 0 };
 }
 
 /**
