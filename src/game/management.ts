@@ -76,7 +76,7 @@ export class Management {
   /** Seconds left on each running campaign. */
   readonly campaigns = new Map<CampaignId, number>();
   readonly months: MonthAccount[] = [emptyAccount(0)];
-  private readonly startMonth: number;
+  readonly startMonth: number;
   private readonly listeners = new Set<() => void>();
   private readonly unlockListeners = new Set<(item: ResearchItem) => void>();
 

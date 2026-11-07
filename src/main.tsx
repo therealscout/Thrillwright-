@@ -2,7 +2,9 @@ import { render } from 'preact';
 import { buildingType } from './core/catalog';
 import { layTestGrid } from './game/bench';
 import { CoasterEditor } from './game/coaster-editor';
+import { GoalTracker, type GoalState } from './game/goals';
 import { Management } from './game/management';
+import { markCompleted, scenarioById, type Scenario } from './game/scenarios';
 import { Park } from './game/park';
 import { createStarterTerrain, starterLayout } from './game/starter-park';
 import { ToolController } from './game/tool-controller';
@@ -14,10 +16,19 @@ import './ui/styles.css';
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
 
+// Which scenario to play: #scenario=<id> (or ?scenario=<id>). Without one,
+// the scenario list opens over a sandbox park.
+const params = new URLSearchParams(location.search);
+const hashParams = new URLSearchParams(location.hash.slice(1));
+const bench = Number(params.get('bench'));
+const chosen = scenarioById(hashParams.get('scenario') ?? params.get('scenario')) ?? (bench > 0 ? scenarioById('sandbox') : undefined);
+const scenario = chosen ?? (scenarioById('sandbox') as Scenario);
+
 const layout = starterLayout();
-const park = new Park(createStarterTerrain());
+const park = new Park(createStarterTerrain(undefined, scenario.terrain), scenario.cash);
 const game = new GameRenderer(canvas, park, layout.entrance);
-const management = new Management(park);
+const management = new Management(park, scenario.management);
+const goals = new GoalTracker(scenario.goal, management.startMonth);
 const coaster = new CoasterEditor(park, (feature) => management.isUnlocked(feature));
 const tools = new ToolController(park, game, coaster);
 tools.canBuild = (type) => management.isUnlocked(type);
@@ -76,6 +87,24 @@ function parkDemand() {
 }
 park.onChange(() => sim.setConfig(parkDemand()));
 
+/** Everything the scenario goal is judged on, right now. */
+function goalState(): GoalState {
+  let bestCoaster = 0;
+  for (const b of park.buildings) if (b.open && b.coaster) bestCoaster = Math.max(bestCoaster, b.coaster.ratings.excitement);
+  let bestMonthProfit = 0;
+  for (const m of management.months.slice(0, -1)) {
+    const profit = Object.values(m.amounts).reduce((a, v) => a + v, 0);
+    bestMonthProfit = Math.max(bestMonthProfit, profit);
+  }
+  return { guests: sim.stats.guests, rating: sim.stats.rating, bestCoaster, bestMonthProfit, loan: management.loan, monthIndex: management.monthIndex };
+}
+sim.onStats(() => goals.check(goalState()));
+goals.onOutcome((o) => {
+  if (o === 'won' && chosen) markCompleted(chosen.id);
+});
+// Nothing needs to run behind the scenario list.
+if (!chosen) sim.setPaused(true);
+
 game.onTilePointer((e) => tools.pointer(e.kind, e.tile));
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
@@ -98,7 +127,6 @@ export const devActions = {
 };
 
 // ?bench=10000 lays the test grid and fills the park, for performance checks.
-const bench = Number(new URLSearchParams(location.search).get('bench'));
 if (bench > 0) {
   devActions.layTestPaths();
   // Give the worker a moment to receive the new paths first.
@@ -106,6 +134,28 @@ if (bench > 0) {
 }
 
 // Exposed for automated smoke tests and debugging in the console.
-(window as unknown as { thrillwright: unknown }).thrillwright = { game, park, tools, sim, coaster, management, devActions };
+(window as unknown as { thrillwright: unknown }).thrillwright = { game, park, tools, sim, coaster, management, goals, devActions };
 
-render(<App game={game} park={park} tools={tools} coaster={coaster} sim={sim} management={management} dev={devActions} showHelp={!bench} />, uiRoot);
+/** Start a scenario: the page reloads into it. */
+function play(id: string) {
+  location.hash = `scenario=${id}`;
+  location.reload();
+}
+
+render(
+  <App
+    game={game}
+    park={park}
+    tools={tools}
+    coaster={coaster}
+    sim={sim}
+    management={management}
+    scenario={chosen ?? null}
+    goals={goals}
+    onPlay={play}
+    dev={devActions}
+    showHelp={!!chosen && !bench && !chosen.tutorial}
+    showPerf={bench > 0}
+  />,
+  uiRoot,
+);

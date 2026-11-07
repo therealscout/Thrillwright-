@@ -78,6 +78,8 @@ export class GameRenderer {
   private guestSource: (() => GuestSnapshot | null) | null = null;
   private buildingStatsSource: (() => readonly BuildingStats[]) | null = null;
 
+  /** Set once the player has panned, turned or zoomed the view (for the tutorial). */
+  cameraMoved = false;
   private rotation: Rotation = 0;
   private yaw = rotationYaw(0);
   private zoom = 1;
@@ -212,11 +214,13 @@ export class GameRenderer {
   }
 
   rotate(direction: 1 | -1): void {
+    this.cameraMoved = true;
     this.rotation = nextRotation(this.rotation, direction);
     this.emit();
   }
 
   zoomBy(factor: number): void {
+    this.cameraMoved = true;
     this.zoom = clamp(this.zoom * factor, MIN_ZOOM, MAX_ZOOM);
     this.updateProjection();
     this.emit();
@@ -402,6 +406,7 @@ export class GameRenderer {
     const { width, height } = this.park.terrain;
     this.target.x = clamp(this.target.x + rx * right - fx * down, 0, width);
     this.target.z = clamp(this.target.z + rz * right - fz * down, 0, height);
+    if (right !== 0 || down !== 0) this.cameraMoved = true;
   }
 
   // ---- per frame ---------------------------------------------------------

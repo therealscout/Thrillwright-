@@ -21,7 +21,7 @@ test('game loads, renders and responds to camera controls', async ({ page }) => 
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/?scenario=sandbox');
   await expect(page.getByText('Thrillwright', { exact: true })).toBeVisible();
 
   // The FPS counter updates once the render loop is running.
@@ -37,7 +37,7 @@ test('game loads, renders and responds to camera controls', async ({ page }) => 
 });
 
 test('building a path costs money and can be undone', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?scenario=sandbox');
   await page.getByRole('button', { name: 'Got it' }).click();
   const start = dollars(await stopResearch(page));
   const cash = page.getByTestId('cash');
@@ -56,7 +56,7 @@ test('building a path costs money and can be undone', async ({ page }) => {
 });
 
 test('guests arrive at the entrance', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?scenario=sandbox');
   await expect(page.getByTestId('guests')).not.toHaveText('0 guests', { timeout: 10_000 });
 });
 
@@ -77,7 +77,7 @@ test('building a stall from the menu and inspecting it', async ({ page }) => {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/');
+  await page.goto('/?scenario=sandbox');
   await page.getByRole('button', { name: 'Got it' }).click();
   const start = await stopResearch(page);
   await page.locator('[data-tool="build"]').click();

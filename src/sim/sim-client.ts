@@ -100,8 +100,18 @@ export class SimClient {
     this.send({ type: 'spawn', count });
   }
 
+  /** Whether the park is paused, and how fast it runs otherwise. */
+  paused = false;
+  speed = 1;
+
   setPaused(paused: boolean): void {
+    this.paused = paused;
     this.send({ type: 'paused', paused });
+  }
+
+  setSpeed(speed: number): void {
+    this.speed = speed;
+    this.send({ type: 'speed', speed });
   }
 
   dispose(): void {
@@ -168,7 +178,7 @@ export class SimClient {
     this.park.earn(by.stalls, 'stalls');
     this.park.earn(by.entry, 'entry');
     // Staff are paid for simulated time, so a paused park costs nothing.
-    if (ticks > 0 && ticks < TICK_RATE * 5) {
+    if (ticks > 0 && ticks < TICK_RATE * 20) {
       this.park.payWages(ticks / TICK_RATE);
       for (const l of this.timeListeners) l(ticks / TICK_RATE);
     }

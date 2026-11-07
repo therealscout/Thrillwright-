@@ -16,6 +16,8 @@ export type ToWorker =
   | { type: 'config'; config: SimConfig }
   | { type: 'spawn'; count: number }
   | { type: 'paused'; paused: boolean }
+  /** Game speed: 1 is normal, up to 4 times faster. */
+  | { type: 'speed'; speed: number }
   | { type: 'staff'; handymen: number; mechanics: number }
   | { type: 'inspect'; tile: { tx: number; ty: number } | null }
   /** Hand a used snapshot buffer back so the worker can refill it. */

@@ -37,7 +37,18 @@ export function starterLayout(size = STARTER_MAP_SIZE): StarterLayout {
   };
 }
 
-export function createStarterTerrain(size = STARTER_MAP_SIZE): Terrain {
+/** How a scenario's map differs from the default sandbox. */
+export interface TerrainStyle {
+  /** Shifts the hill noise so each map looks different. */
+  seed?: number;
+  /** Height of hills inside the owned plot (0 keeps it flat). */
+  plotHills?: number;
+  /** A small pond (default), a large lake along the east side, or no water. */
+  water?: 'pond' | 'lake' | 'none';
+}
+
+export function createStarterTerrain(size = STARTER_MAP_SIZE, style: TerrainStyle = {}): Terrain {
+  const { seed = 0, plotHills = 0, water = 'pond' } = style;
   const t = createTerrain(size, size);
   const { owned, entrance } = starterLayout(size);
   const [x0, y0, x1, y1] = owned;
@@ -49,25 +60,24 @@ export function createStarterTerrain(size = STARTER_MAP_SIZE): Terrain {
       const dx = Math.max(x0 - cx, 0, cx - x1);
       const dy = Math.max(y0 - cy, 0, cy - y1);
       const fade = Math.min(Math.hypot(dx, dy) / 8, 1);
-      const hill = valueNoise(cx, cy, 14) * 10 + valueNoise(cx + 100, cy, 5) * 3;
-      const h = Math.round(BASE_HEIGHT + fade * hill);
+      const hill = valueNoise(cx + seed * 37, cy + seed * 11, 14) * 10 + valueNoise(cx + 100 + seed * 13, cy, 5) * 3;
+      // Inside a hilly plot, keep the ground by the entrance flat.
+      const nearGate = Math.min(1, Math.max(0, (Math.hypot(cx - entrance.tx, cy - entrance.ty) - 14) / 8));
+      const inside = plotHills * nearGate * valueNoise(cx + 50 + seed * 7, cy + 50, 9);
+      const h = Math.round(BASE_HEIGHT + fade * hill + (1 - fade) * inside);
       t.corners[cornerIndex(t, cx, cy)] = Math.min(h, MAX_HEIGHT);
     }
   }
   relaxSlopes(t);
 
-  // A small pond inside the plot: a dip filled with water.
-  const pcx = x1 - 12;
-  const pcy = y0 + 12;
-  for (let cy = pcy - 3; cy <= pcy + 3; cy++) {
-    for (let cx = pcx - 4; cx <= pcx + 4; cx++) {
-      const inner = Math.abs(cx - pcx) <= 3 && Math.abs(cy - pcy) <= 2;
-      t.corners[cornerIndex(t, cx, cy)] = BASE_HEIGHT - (inner ? 2 : 1);
-    }
+  if (water === 'pond') {
+    // A small pond inside the plot: a dip filled with water.
+    digLake(t, x1 - 12, y0 + 12, 4, 3);
+  } else if (water === 'lake') {
+    // A long lake along the east side of the plot, spilling past it.
+    digLake(t, x1 - 6, y0 + 20, 9, 16);
   }
-  for (let ty = pcy - 3; ty < pcy + 3; ty++) {
-    for (let tx = pcx - 4; tx < pcx + 4; tx++) t.water[tileIndex(t, tx, ty)] = BASE_HEIGHT;
-  }
+  if (plotHills > 0 && water !== 'none') relaxSlopes(t);
 
   // Entrance path heading into the park.
   for (let ty = entrance.ty; ty > entrance.ty - 14; ty--) {
@@ -75,6 +85,23 @@ export function createStarterTerrain(size = STARTER_MAP_SIZE): Terrain {
     t.paths[tileIndex(t, entrance.tx, ty)] = 1;
   }
   return t;
+}
+
+/** A flat-bottomed dip filled with water, centred on a corner, rx by ry tiles out. */
+function digLake(t: Terrain, pcx: number, pcy: number, rx: number, ry: number): void {
+  for (let cy = pcy - ry; cy <= pcy + ry; cy++) {
+    for (let cx = pcx - rx; cx <= pcx + rx; cx++) {
+      if (cx < 0 || cy < 0 || cx > t.width || cy > t.height) continue;
+      const inner = Math.abs(cx - pcx) < rx && Math.abs(cy - pcy) < ry;
+      t.corners[cornerIndex(t, cx, cy)] = BASE_HEIGHT - (inner ? 2 : 1);
+    }
+  }
+  for (let ty = pcy - ry; ty < pcy + ry; ty++) {
+    for (let tx = pcx - rx; tx < pcx + rx; tx++) {
+      if (tx < 0 || ty < 0 || tx >= t.width || ty >= t.height) continue;
+      t.water[tileIndex(t, tx, ty)] = BASE_HEIGHT;
+    }
+  }
 }
 
 /** Lower any corner that is too steep against a neighbour, until none are. */

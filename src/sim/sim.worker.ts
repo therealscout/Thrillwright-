@@ -11,6 +11,7 @@ declare const self: DedicatedWorkerGlobalScope;
 
 let sim: SimCore | null = null;
 let paused = false;
+let speed = 1;
 const spare: ArrayBuffer[] = [];
 let last = performance.now();
 let debt = 0;
@@ -28,7 +29,7 @@ function bufferFor(count: number): ArrayBuffer {
 
 function loop(): void {
   const now = performance.now();
-  debt += (now - last) / 1000;
+  debt += ((now - last) / 1000) * speed;
   last = now;
   if (!sim || paused) {
     debt = 0;
@@ -36,12 +37,12 @@ function loop(): void {
   }
   // Catch up at most a few ticks if the worker was delayed.
   let ticks = 0;
-  while (debt >= TICK_SECONDS && ticks < 3) {
+  while (debt >= TICK_SECONDS && ticks < 3 * speed) {
     sim.tick();
     debt -= TICK_SECONDS;
     ticks++;
   }
-  if (debt > TICK_SECONDS * 3) debt = 0;
+  if (debt > TICK_SECONDS * 3 * speed) debt = 0;
   if (ticks === 0) return;
 
   const buffer = bufferFor(sim.guests.count);
@@ -76,6 +77,9 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'staff':
       sim?.setStaff(msg.handymen, msg.mechanics);
+      break;
+    case 'speed':
+      speed = Math.max(1, Math.min(4, msg.speed));
       break;
     case 'paused':
       paused = msg.paused;

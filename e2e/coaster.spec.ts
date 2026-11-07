@@ -14,7 +14,7 @@ test('designing, testing and opening a coaster', async ({ page }) => {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/');
+  await page.goto('/?scenario=sandbox');
   await page.getByRole('button', { name: 'Got it' }).click();
   await page.locator('[data-tool="build"]').click();
   await page.locator('[data-build="steel-coaster"]').click();

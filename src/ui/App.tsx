@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { COSTS } from '../core/costs';
 import type { BuilderState, CoasterEditor } from '../game/coaster-editor';
+import type { GoalTracker, Outcome } from '../game/goals';
 import type { Management } from '../game/management';
+import type { Scenario } from '../game/scenarios';
 import type { Park } from '../game/park';
 import { BRUSH_SIZES, TOOLS, type ToolController, type ToolState } from '../game/tool-controller';
 import type { GameRenderer, RendererStats } from '../render/game-renderer';
@@ -12,7 +14,10 @@ import { BuildMenu } from './BuildMenu';
 import { CoasterBuilder } from './CoasterBuilder';
 import { count, money } from './format';
 import { ManageIcon, StaffIcon, ToolIcon } from './icons';
+import { GoalPanel, OutcomeDialog } from './GoalPanel';
 import { ManagePanel } from './ManagePanel';
+import { ScenarioSelect } from './ScenarioSelect';
+import { TutorialCard } from './TutorialCard';
 import { ParkPanel } from './ParkPanel';
 import { StaffPanel } from './StaffPanel';
 import { GuestInfo } from './GuestInfo';
@@ -45,21 +50,34 @@ interface AppProps {
   coaster: CoasterEditor;
   sim: SimClient;
   management: Management;
+  /** The scenario being played, or null to show the scenario list. */
+  scenario: Scenario | null;
+  goals: GoalTracker;
+  onPlay(id: string): void;
   dev: DevActions;
   showHelp?: boolean;
+  /** Open the performance panel at start (benchmarks). */
+  showPerf?: boolean;
 }
 
-export function App({ game, park, tools, coaster, sim, management, dev, showHelp: helpAtStart = true }: AppProps) {
+export function App({ game, park, tools, coaster, sim, management, scenario, goals, onPlay, dev, showHelp: helpAtStart = true, showPerf: perfAtStart = false }: AppProps) {
   const [stats, setStats] = useState<RendererStats | null>(null);
   const [tool, setTool] = useState<ToolState>(tools.state);
   const [simStats, setSimStats] = useState<SimStats>(sim.stats);
   const [toast, setToast] = useState<{ text: string; tone: string } | null>(null);
   const [showHelp, setShowHelp] = useState(helpAtStart);
-  const [showPerf, setShowPerf] = useState(!helpAtStart);
+  const [showPerf, setShowPerf] = useState(perfAtStart);
   const [showBuild, setShowBuild] = useState(false);
   const [showPark, setShowPark] = useState(false);
   const [showStaff, setShowStaff] = useState(false);
   const [showManage, setShowManage] = useState(false);
+  const [showGoal, setShowGoal] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome>('playing');
+  const [showMenu, setShowMenu] = useState(scenario === null);
+  /** Panels opened at least once, for the tutorial. */
+  const opened = useRef(new Set<string>()).current;
+  if (showPark) opened.add('park');
+  if (showManage) opened.add('manage');
   const [, setManageVersion] = useState(0);
   const [, setStaffVersion] = useState(0);
   const [, setVersion] = useState(park.version);
@@ -72,6 +90,35 @@ export function App({ game, park, tools, coaster, sim, management, dev, showHelp
   useEffect(() => park.onStaff(() => setStaffVersion((v) => v + 1)), [park]);
   useEffect(() => park.onChange(() => setVersion(park.version)), [park]);
   useEffect(() => management.onChange(() => setManageVersion((v) => v + 1)), [management]);
+  useEffect(() => goals.onOutcome(setOutcome), [goals]);
+
+  // Pause and game speed.
+  const [paused, setPausedState] = useState(sim.paused);
+  const [speed, setSpeedState] = useState(sim.speed);
+  const setPaused = (p: boolean) => {
+    sim.setPaused(p);
+    setPausedState(p);
+  };
+  const setSpeed = (n: number) => {
+    sim.setSpeed(n);
+    setSpeedState(n);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.ctrlKey || e.metaKey) return;
+      if (e.key === 'p' || e.key === 'P') {
+        const next = !sim.paused;
+        sim.setPaused(next);
+        setPausedState(next);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sim]);
+  // A finished scenario stops the clock until the player decides what next.
+  useEffect(() => {
+    if (outcome !== 'playing') setPaused(true);
+  }, [outcome]);
 
   // Show each feedback message briefly.
   useEffect(() => {
@@ -100,6 +147,39 @@ export function App({ game, park, tools, coaster, sim, management, dev, showHelp
         <div class="date" data-testid="date" title="Date">
           {management.date.day} {management.date.month}, Year {management.date.year}
         </div>
+        <div class="speed" role="group" aria-label="Game speed">
+          <button
+            type="button"
+            class={paused ? 'active' : ''}
+            aria-pressed={paused}
+            title="Pause (P)"
+            data-testid="pause"
+            onClick={() => setPaused(!paused)}
+          >
+            {paused ? '▶' : '❚❚'}
+          </button>
+          {[1, 2, 3].map((n) => (
+            <button
+              type="button"
+              key={n}
+              class={!paused && speed === n ? 'active' : ''}
+              aria-pressed={!paused && speed === n}
+              title={`Speed ${n}×`}
+              data-speed={n}
+              onClick={() => {
+                setPaused(false);
+                setSpeed(n);
+              }}
+            >
+              {n}×
+            </button>
+          ))}
+        </div>
+        {scenario && (
+          <button type="button" class="guests goal-chip" data-testid="goal" title="Scenario goal" onClick={() => setShowGoal((v) => !v)}>
+            {goals.outcome === 'won' ? '🏆 Goal reached' : goals.lines.length ? `◎ Goal ${goals.lines.filter((l) => l.met).length}/${goals.lines.length}` : '◎ Sandbox'}
+          </button>
+        )}
         <button type="button" class="guests" data-testid="guests" title="Park and guest details" onClick={() => setShowPark((v) => !v)}>
           {count.format(simStats.guests)} guests
         </button>
@@ -117,7 +197,18 @@ export function App({ game, park, tools, coaster, sim, management, dev, showHelp
         <button type="button" onClick={() => setShowHelp((v) => !v)} title="Controls">?</button>
       </div>
 
+      {scenario?.tutorial && !showMenu && <TutorialCard park={park} sim={sim} game={game} opened={opened} />}
+
       <div class="side">
+        {showGoal && scenario && (
+          <GoalPanel
+            scenario={scenario}
+            goals={goals}
+            monthIndex={management.monthIndex}
+            onScenarios={() => setShowMenu(true)}
+            onClose={() => setShowGoal(false)}
+          />
+        )}
         {builder.phase !== 'idle' && (
           <CoasterBuilder
             editor={coaster}
@@ -272,6 +363,23 @@ export function App({ game, park, tools, coaster, sim, management, dev, showHelp
         </div>
       </div>
 
+      {scenario && (
+        <OutcomeDialog
+          outcome={outcome}
+          scenario={scenario}
+          onKeepPlaying={() => {
+            setOutcome('playing');
+            setPaused(false);
+          }}
+          onRetry={() => onPlay(scenario.id)}
+          onScenarios={() => {
+            setOutcome('playing');
+            setShowMenu(true);
+          }}
+        />
+      )}
+      {showMenu && <ScenarioSelect onPlay={onPlay} onClose={scenario ? () => setShowMenu(false) : undefined} />}
+
       {toast && <div class={`toast ${toast.tone}`} role="status">{toast.text}</div>}
 
       <div class="status" data-testid="status">
@@ -290,6 +398,7 @@ export function App({ game, park, tools, coaster, sim, management, dev, showHelp
             <li><kbd>1</kbd>–<kbd>7</kbd>: land tools · <kbd>8</kbd>/<kbd>9</kbd>: bin, bench · <kbd>Esc</kbd>: look</li>
             <li>Rides &amp; stalls menu, <kbd>R</kbd>: turn entrance</li>
             <li><kbd>C</kbd>: coaster builder</li>
+            <li><kbd>P</kbd>: pause · speed buttons in the top bar</li>
             <li>Look tool: click a ride or a guest for details</li>
             <li><kbd>[</kbd>/<kbd>]</kbd>: brush · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd>: undo, redo</li>
           </ul>

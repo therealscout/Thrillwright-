@@ -327,3 +327,98 @@ kbd {
 .discovered li::before { content: '✓ '; color: #06d6a0; }
 .panel.manage { max-height: calc(100vh - 190px); overflow-y: auto; }
 .piece-grid button.locked { opacity: 0.45; font-style: italic; }
+
+/* ---- Scenarios, goals and tutorial (milestone 8) --------------------------- */
+button.primary { background: var(--ui-accent); color: #1b2230; border-color: var(--ui-accent); font-weight: 600; }
+button.primary:hover:not(:disabled) { background: #ffdd8a; }
+button.link { background: none; border: none; height: auto; padding: 4px 0; color: var(--ui-accent); font-size: 12px; min-width: 0; }
+.goal-chip { color: var(--ui-text); }
+
+.menu-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(10, 16, 26, 0.55);
+  backdrop-filter: blur(3px);
+  z-index: 10;
+}
+.menu-backdrop.light { background: rgba(10, 16, 26, 0.3); }
+.menu {
+  width: min(860px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: rgba(20, 28, 40, 0.94);
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+.menu-head { display: flex; align-items: center; gap: 14px; padding: 20px 24px; border-bottom: 1px solid var(--ui-border); }
+.menu-head > div { flex: 1; }
+.menu-head h1 { margin: 0; font-size: 26px; letter-spacing: 0.01em; }
+.menu-head p { margin: 2px 0 0; color: var(--ui-muted); }
+.logo.big { width: 44px; height: 44px; border-radius: 12px; }
+.menu-body { display: grid; grid-template-columns: 300px 1fr; gap: 20px; padding: 20px 24px 24px; }
+.scenario-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; align-content: start; }
+.scenario { width: 100%; height: auto; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
+.scenario.active { color: var(--ui-text); }
+.scenario .done { color: #06d6a0; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: var(--ui-muted); white-space: nowrap; }
+.badge.badge-tutorial { background: rgba(17, 138, 178, 0.35); color: var(--ui-text); }
+.badge.badge-easy { background: rgba(6, 214, 160, 0.25); color: var(--ui-text); }
+.badge.badge-medium { background: rgba(255, 209, 102, 0.25); color: var(--ui-text); }
+.badge.badge-hard { background: rgba(239, 71, 111, 0.3); color: var(--ui-text); }
+.scenario-detail h2 { margin: 0 0 6px; font-size: 20px; }
+.scenario-detail > p { margin: 0 0 12px; color: var(--ui-muted); line-height: 1.5; }
+.scenario-detail h3 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ui-muted); }
+.scenario-detail .primary { margin-top: 18px; min-width: 160px; height: 42px; font-size: 15px; }
+.goal-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.goal-list.checks-done { list-style: none; padding: 0; margin-bottom: 10px; }
+.goal-list.checks-done li { display: grid; grid-template-columns: 18px 1fr auto; gap: 6px; align-items: baseline; }
+.goal-list.checks-done li.met > span:first-child { color: #06d6a0; }
+.goal-list .note { margin: 0; }
+
+.outcome {
+  width: min(420px, 100%);
+  padding: 22px 24px;
+  text-align: center;
+  background: rgba(20, 28, 40, 0.96);
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+}
+.outcome.won { border-color: var(--ui-accent); }
+.outcome h2 { margin: 0 0 8px; font-size: 22px; }
+.outcome.won h2 { color: var(--ui-accent); }
+.outcome p { color: var(--ui-muted); line-height: 1.5; }
+.outcome .row { display: flex; gap: 8px; justify-content: center; }
+
+.tutorial {
+  position: absolute;
+  left: 12px;
+  top: 108px;
+  width: 300px;
+  padding: 14px 16px;
+  background: rgba(17, 60, 92, 0.9);
+  border: 1px solid rgba(142, 202, 230, 0.5);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+}
+.tutorial-head { display: flex; justify-content: space-between; align-items: center; }
+.tutorial .step-count { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8ecae6; }
+.tutorial .close { min-width: 26px; height: 26px; padding: 0; }
+.tutorial h2 { margin: 4px 0 6px; font-size: 16px; }
+.tutorial p { margin: 0 0 8px; line-height: 1.5; }
+.tutorial-hint { color: #8ecae6; font-size: 12px; }
+.tutorial-dots { list-style: none; display: flex; gap: 4px; margin: 4px 0 6px; padding: 0; }
+.tutorial-dots li { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); }
+.tutorial-dots li.done { background: #06d6a0; }
+.tutorial-dots li.now { background: var(--ui-accent); }
+.tutorial-tab { position: absolute; left: 12px; top: 108px; background: rgba(17, 60, 92, 0.9); }
+
+@media (max-width: 720px) {
+  .menu-body { grid-template-columns: 1fr; }
+}
+.topbar .speed { display: flex; gap: 2px; }
+.topbar .speed button { min-width: 30px; height: 28px; padding: 0 6px; font-size: 12px; }
