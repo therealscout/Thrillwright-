@@ -1,0 +1,22 @@
+/** Original Thrillwright colour palette: bright, warm, a little nostalgic. */
+export const palette = {
+  sky: '#bfe3f2',
+  skyLight: '#e8f6ff',
+  groundLight: '#6b8f4e',
+  sun: '#fff1d6',
+  grass: '#6fbf5a',
+  sand: '#e6d39a',
+  dirt: '#9a7457',
+  lakeBed: '#5f7d4c',
+  unowned: '#5d6b4f',
+  path: '#d8c9b4',
+  pathEdge: '#9c8b78',
+  water: '#2585c0',
+  trunk: '#8a5a3b',
+  leaves: '#3f9a4a',
+  gridLine: '#1f3d1a',
+  cursor: '#ffd166',
+  cursorBad: '#ef476f',
+  accent: '#ef476f',
+  accentDark: '#b8325a',
+} as const;
