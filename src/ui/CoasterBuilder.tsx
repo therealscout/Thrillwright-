@@ -53,9 +53,11 @@ export function CoasterBuilder({ editor, state, onPlaceStation, onMessage }: Pro
                     key={o.id}
                     data-piece={o.id}
                     disabled={!o.ok}
-                    title={o.ok ? `${o.label}: ${money.format(o.cost)}` : o.reason}
+                    class={o.locked ? 'locked' : undefined}
+                    title={o.ok ? `${o.label}: ${money.format(o.cost)}` : o.locked ? `${o.label}: research it in Manage first` : o.reason}
                     onClick={() => report(editor.press(o.id))}
                   >
+                    {o.locked && <span aria-hidden="true">🔒 </span>}
                     {o.label}
                   </button>
                 ))}

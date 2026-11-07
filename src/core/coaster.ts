@@ -182,22 +182,25 @@ export function slopePiece(state: TrackState, want: 'up' | 'down' | 'level'): Pi
 
 /**
  * A ready-made circuit that fits a 13 by 4 tile area starting at the
- * station: a chain lift, a drop, a loop and two pairs of turns.
+ * station: a chain lift, a drop, a loop and two pairs of turns. Without
+ * banked turns or the loop researched, it uses plain turns and straights.
  */
-export function sampleLayout(): Piece[] {
+export function sampleLayout(features: { bankedTurns?: boolean; loop?: boolean } = {}): Piece[] {
+  const { bankedTurns = true, loop = true } = features;
   const lift = (kind: PieceKind): Piece => ({ kind, lift: true });
+  const turn: PieceKind = bankedTurns ? 'bank-right' : 'right';
   return [
     ...stationPieces(),
     { kind: 'straight' },
     lift('flat-up'),
     ...Array.from({ length: 3 }, () => lift('up')),
     lift('up-flat'),
-    { kind: 'bank-right' },
-    { kind: 'bank-right' },
+    { kind: turn },
+    { kind: turn },
     { kind: 'flat-down' },
     ...Array.from({ length: 3 }, (): Piece => ({ kind: 'down' })),
     { kind: 'down-flat' },
-    { kind: 'loop' },
+    ...(loop ? [{ kind: 'loop' } as Piece] : Array.from({ length: 3 }, (): Piece => ({ kind: 'straight' }))),
     { kind: 'brakes' },
     { kind: 'right' },
     { kind: 'right' },

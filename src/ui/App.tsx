@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { COSTS } from '../core/costs';
 import type { BuilderState, CoasterEditor } from '../game/coaster-editor';
+import type { Management } from '../game/management';
 import type { Park } from '../game/park';
 import { BRUSH_SIZES, TOOLS, type ToolController, type ToolState } from '../game/tool-controller';
 import type { GameRenderer, RendererStats } from '../render/game-renderer';
@@ -10,7 +11,8 @@ import { BuildingInfo } from './BuildingInfo';
 import { BuildMenu } from './BuildMenu';
 import { CoasterBuilder } from './CoasterBuilder';
 import { count, money } from './format';
-import { StaffIcon, ToolIcon } from './icons';
+import { ManageIcon, StaffIcon, ToolIcon } from './icons';
+import { ManagePanel } from './ManagePanel';
 import { ParkPanel } from './ParkPanel';
 import { StaffPanel } from './StaffPanel';
 import { GuestInfo } from './GuestInfo';
@@ -42,11 +44,12 @@ interface AppProps {
   tools: ToolController;
   coaster: CoasterEditor;
   sim: SimClient;
+  management: Management;
   dev: DevActions;
   showHelp?: boolean;
 }
 
-export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStart = true }: AppProps) {
+export function App({ game, park, tools, coaster, sim, management, dev, showHelp: helpAtStart = true }: AppProps) {
   const [stats, setStats] = useState<RendererStats | null>(null);
   const [tool, setTool] = useState<ToolState>(tools.state);
   const [simStats, setSimStats] = useState<SimStats>(sim.stats);
@@ -56,6 +59,8 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
   const [showBuild, setShowBuild] = useState(false);
   const [showPark, setShowPark] = useState(false);
   const [showStaff, setShowStaff] = useState(false);
+  const [showManage, setShowManage] = useState(false);
+  const [, setManageVersion] = useState(0);
   const [, setStaffVersion] = useState(0);
   const [, setVersion] = useState(park.version);
   const [builder, setBuilder] = useState<BuilderState>(coaster.state);
@@ -66,6 +71,7 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
   useEffect(() => coaster.subscribe(setBuilder), [coaster]);
   useEffect(() => park.onStaff(() => setStaffVersion((v) => v + 1)), [park]);
   useEffect(() => park.onChange(() => setVersion(park.version)), [park]);
+  useEffect(() => management.onChange(() => setManageVersion((v) => v + 1)), [management]);
 
   // Show each feedback message briefly.
   useEffect(() => {
@@ -91,6 +97,9 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
           Thrillwright
         </div>
         <div class="cash" data-testid="cash" title="Park cash">{money.format(tool.cash)}</div>
+        <div class="date" data-testid="date" title="Date">
+          {management.date.day} {management.date.month}, Year {management.date.year}
+        </div>
         <button type="button" class="guests" data-testid="guests" title="Park and guest details" onClick={() => setShowPark((v) => !v)}>
           {count.format(simStats.guests)} guests
         </button>
@@ -131,6 +140,7 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
           <BuildMenu
             cash={tool.cash}
             current={tool.buildType}
+            isUnlocked={(id) => management.isUnlocked(id)}
             onPick={(t) => {
               tools.setBuildType(t.id);
               if (t.custom) setShowBuild(false);
@@ -156,6 +166,9 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
             onChange={(kind, delta) => park.setStaff(kind, delta)}
             onClose={() => setShowStaff(false)}
           />
+        )}
+        {showManage && (
+          <ManagePanel management={management} buildings={park.buildings} cash={tool.cash} onClose={() => setShowManage(false)} />
         )}
         {showPerf && (
           <aside class="panel perf" aria-label="Performance test" data-testid="perf">
@@ -226,6 +239,17 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
           >
             <StaffIcon />
             <span class="tool-label">Staff</span>
+          </button>
+          <button
+            type="button"
+            class={showManage ? 'tool active' : 'tool'}
+            aria-pressed={showManage}
+            title="Finances, marketing and research"
+            data-tool="manage"
+            onClick={() => setShowManage((v) => !v)}
+          >
+            <ManageIcon />
+            <span class="tool-label">Manage</span>
           </button>
           <span class="divider" />
           <div class="brush" role="group" aria-label="Brush size">

@@ -24,7 +24,8 @@ export class SimClient {
   private syncedVersion: number;
   private config: SimConfig;
   private lastStats: SimStats = {
-    guests: 0, arrived: 0, left: 0, tick: 0, tickMs: 0, income: 0, averages: EMPTY_AVERAGES, buildings: [],
+    guests: 0, arrived: 0, left: 0, tick: 0, tickMs: 0, income: 0, incomeBy: { rides: 0, stalls: 0, entry: 0 },
+    averages: EMPTY_AVERAGES, buildings: [],
     rating: 50,
     ratingParts: ratingParts({ guests: 0, happiness: 0, rides: 0, rideKinds: 0, dirtyTiles: 0, brokenRides: 0, unhappyLeavers: 0 }),
     thoughts: { top: [], recent: [] },
@@ -33,6 +34,7 @@ export class SimClient {
     guest: null,
   };
   private readonly eventListeners = new Set<(e: SimEvent) => void>();
+  private readonly timeListeners = new Set<(seconds: number) => void>();
   /** Latest litter and sick per tile. */
   dirt: { litter: Uint8Array; vomit: Uint8Array; version: number } | null = null;
   private readonly listeners = new Set<(s: SimStats) => void>();
@@ -47,6 +49,12 @@ export class SimClient {
     park.onChange(() => this.syncWorld());
     park.onStaff(() => this.syncStaff());
     this.syncStaff();
+  }
+
+  /** Simulated seconds passing (not called while paused). */
+  onTime(listener: (seconds: number) => void): () => void {
+    this.timeListeners.add(listener);
+    return () => this.timeListeners.delete(listener);
   }
 
   /** Breakdowns, repairs and other news from the simulation. */
@@ -155,9 +163,15 @@ export class SimClient {
     if (previous) this.send({ type: 'recycle', buffer: previous.data.buffer as ArrayBuffer }, [previous.data.buffer as ArrayBuffer]);
     const ticks = msg.stats.tick - this.lastStats.tick;
     this.lastStats = msg.stats;
-    this.park.earn(msg.stats.income);
+    const by = msg.stats.incomeBy;
+    this.park.earn(by.rides, 'rides');
+    this.park.earn(by.stalls, 'stalls');
+    this.park.earn(by.entry, 'entry');
     // Staff are paid for simulated time, so a paused park costs nothing.
-    if (ticks > 0 && ticks < TICK_RATE * 5) this.park.payWages(ticks / TICK_RATE);
+    if (ticks > 0 && ticks < TICK_RATE * 5) {
+      this.park.payWages(ticks / TICK_RATE);
+      for (const l of this.timeListeners) l(ticks / TICK_RATE);
+    }
     for (const e of msg.stats.events) for (const l of this.eventListeners) l(e);
     if (msg.dirt) this.dirt = { ...msg.dirt, version: (this.dirt?.version ?? 0) + 1 };
     const now = performance.now();

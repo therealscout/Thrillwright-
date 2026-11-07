@@ -36,6 +36,17 @@ interface HistoryEntry {
 }
 
 export const UNDO_LIMIT = 50;
+
+/** Where money comes from or goes to, for the finance window. */
+export type Ledger =
+  | 'rides'
+  | 'stalls'
+  | 'entry'
+  | 'construction'
+  | 'wages'
+  | 'marketing'
+  | 'research'
+  | 'interest';
 /** Share of a building's price returned when it is demolished. */
 export const DEMOLISH_REFUND = 0.5;
 /** Most staff of each kind. */
@@ -61,6 +72,7 @@ export class Park {
   private readonly listeners = new Set<() => void>();
   private readonly cashListeners = new Set<() => void>();
   private readonly staffListeners = new Set<() => void>();
+  private readonly ledgerListeners = new Set<(category: Ledger, amount: number) => void>();
 
   constructor(readonly terrain: Terrain, cash = STARTING_CASH) {
     this.cash = cash;
@@ -76,6 +88,23 @@ export class Park {
   onCash(listener: () => void): () => void {
     this.cashListeners.add(listener);
     return () => this.cashListeners.delete(listener);
+  }
+
+  /** Every change to cash, by category (positive = money in). */
+  onLedger(listener: (category: Ledger, amount: number) => void): () => void {
+    this.ledgerListeners.add(listener);
+    return () => this.ledgerListeners.delete(listener);
+  }
+
+  /** Pay (or receive, if negative) money that isn't part of building, outside the undo history. */
+  charge(amount: number, category: Ledger): void {
+    this.adjustCash(-amount, category);
+  }
+
+  /** Change cash without recording it as profit or loss (taking or repaying a loan). */
+  transfer(amount: number): void {
+    this.cash += amount;
+    for (const l of this.cashListeners) l();
   }
 
   /** Staff hired or fired. */
@@ -102,7 +131,7 @@ export class Park {
     const amount = (this.wageBill * seconds) / 60;
     if (amount <= 0) return;
     this.wages += amount;
-    this.adjustCash(-amount);
+    this.adjustCash(-amount, 'wages');
   }
 
   /** Start a drag. All edits until endStroke() undo as one step. */
@@ -247,10 +276,11 @@ export class Park {
   }
 
   /** Money from tickets and stalls, reported by the simulation. */
-  earn(amount: number): void {
+  earn(amount: number, category: Ledger = 'rides'): void {
     if (amount === 0) return;
     this.cash += amount;
     this.income += amount;
+    for (const l of this.ledgerListeners) l(category, amount);
     for (const l of this.cashListeners) l();
   }
 
@@ -288,8 +318,9 @@ export class Park {
     this.changed();
   }
 
-  private adjustCash(delta: number): void {
+  private adjustCash(delta: number, category: Ledger = 'construction'): void {
     this.cash += delta;
+    if (delta !== 0) for (const l of this.ledgerListeners) l(category, delta);
     for (const l of this.cashListeners) l();
   }
 

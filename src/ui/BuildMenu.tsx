@@ -10,11 +10,14 @@ const GROUPS: Array<{ title: string; kinds: BuildingKind[] }> = [
 interface Props {
   cash: number;
   current: string | null;
+  /** Rides and stalls not yet researched are left out. */
+  isUnlocked?(id: string): boolean;
   onPick(type: BuildingType): void;
   onClose(): void;
 }
 
-export function BuildMenu({ cash, current, onPick, onClose }: Props) {
+export function BuildMenu({ cash, current, isUnlocked = () => true, onPick, onClose }: Props) {
+  const locked = CATALOG.filter((t) => !isUnlocked(t.id)).length;
   return (
     <aside class="panel build-menu" aria-label="Build menu" data-testid="build-menu">
       <div class="panel-head">
@@ -25,7 +28,7 @@ export function BuildMenu({ cash, current, onPick, onClose }: Props) {
         <section key={group.title}>
           <h3>{group.title}</h3>
           <ul class="catalog">
-            {CATALOG.filter((t) => group.kinds.includes(t.kind)).map((t) => (
+            {CATALOG.filter((t) => group.kinds.includes(t.kind) && isUnlocked(t.id)).map((t) => (
               <li key={t.id}>
                 <button
                   type="button"
@@ -50,6 +53,11 @@ export function BuildMenu({ cash, current, onPick, onClose }: Props) {
           </ul>
         </section>
       ))}
+      {locked > 0 && (
+        <p class="note" data-testid="locked-count">
+          {locked === 1 ? 'One more ride or stall' : `${locked} more rides and stalls`} to discover through research (Manage).
+        </p>
+      )}
     </aside>
   );
 }

@@ -24,6 +24,14 @@ export function ToolIcon({ tool }: { tool: ToolId }) {
   );
 }
 
+export function ManageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 20h16M6 16v-5M10 16V7M14 16v-7M18 16V4" />
+    </svg>
+  );
+}
+
 export function StaffIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

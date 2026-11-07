@@ -64,6 +64,8 @@ export interface SimConfig {
   maxGuests: number;
   /** Scale arrivals and the guest cap by the park rating (off for benchmarks). */
   useRating?: boolean;
+  /** Park entry fee each new guest pays, in dollars. */
+  entryFee?: number;
 }
 
 export interface BuildingStats {
@@ -100,6 +102,8 @@ export interface SimStats {
   tickMs: number;
   /** Money taken since the previous stats() call. */
   income: number;
+  /** The same, split by where it came from. */
+  incomeBy: { rides: number; stalls: number; entry: number };
   averages: GuestAverages;
   buildings: BuildingStats[];
   /** Park rating 0..100 and what makes it up. */
@@ -179,6 +183,7 @@ export class SimCore {
   private arrived = 0;
   private left = 0;
   private income = 0;
+  private incomeBy = { rides: 0, stalls: 0, entry: 0 };
   private nextTicket = 1;
   private tickTimes: number[] = [];
   readonly thoughts = new ThoughtLog();
@@ -294,7 +299,9 @@ export class SimCore {
   stats(): SimStats {
     const total = this.tickTimes.reduce((a, b) => a + b, 0);
     const income = this.income;
+    const incomeBy = this.incomeBy;
     this.income = 0;
+    this.incomeBy = { rides: 0, stalls: 0, entry: 0 };
     const buildings: BuildingStats[] = [];
     for (const b of this.buildings.values()) {
       buildings.push({
@@ -318,6 +325,7 @@ export class SimCore {
       tick: this.tickCount,
       tickMs: this.tickTimes.length ? total / this.tickTimes.length : 0,
       income,
+      incomeBy,
       averages: this.averages(),
       buildings,
       rating: Math.round(this.rating),
@@ -415,7 +423,16 @@ export class SimCore {
       this.arrivalDebt -= 1;
       const e = this.entrances[Math.floor(this.nextSeedFloat() * this.entrances.length)];
       if (!e || !isPath(this.world, e.tx, e.ty)) return;
-      if (g.add(e.tx, e.ty, this.nextSeed()) >= 0) this.arrived++;
+      const i = g.add(e.tx, e.ty, this.nextSeed());
+      if (i < 0) continue;
+      this.arrived++;
+      // Pay to get in (guests bring a little extra if there's a fee).
+      const fee = this.config.entryFee ?? 0;
+      if (fee > 0) {
+        g.cash[i] = (g.cash[i] as number) + fee * 0.5 - fee;
+        this.income += fee;
+        this.incomeBy.entry += fee;
+      }
     }
   }
 
@@ -704,6 +721,8 @@ export class SimCore {
     const price = b.def.price;
     this.guests.cash[i] = (this.guests.cash[i] as number) - price;
     this.income += price;
+    if (b.def.kind === 'ride') this.incomeBy.rides += price;
+    else this.incomeBy.stalls += price;
     b.revenue += price;
     b.customers++;
   }
@@ -791,6 +810,8 @@ export class SimCore {
         b.queue--;
         g.cash[i] = (g.cash[i] as number) + b.def.price;
         this.income -= b.def.price;
+      this.incomeBy.rides -= b.def.price;
+        this.incomeBy.rides -= b.def.price;
         b.revenue -= b.def.price;
       }
       g.state[i] = GuestState.Wandering;
@@ -1019,6 +1040,7 @@ export class SimCore {
       if (g.state[i] !== GuestState.Queuing || g.target[i] !== b.def.id) continue;
       g.cash[i] = (g.cash[i] as number) + b.def.price;
       this.income -= b.def.price;
+      this.incomeBy.rides -= b.def.price;
       b.revenue -= b.def.price;
       g.state[i] = GuestState.Wandering;
       g.target[i] = 0;

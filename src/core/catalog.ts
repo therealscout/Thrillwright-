@@ -73,6 +73,14 @@ export const CATALOG: BuildingType[] = [
     description: 'Cold drinks on a hot day.', satisfies: 160,
   },
   {
+    id: 'ice-cream-cart', name: 'Ice Cream Cart', kind: 'food', size: 1, cost: 250, price: 2,
+    description: 'A sweet treat. Not very filling.', satisfies: 70,
+  },
+  {
+    id: 'coffee-kiosk', name: 'Coffee Kiosk', kind: 'drink', size: 1, cost: 300, price: 2,
+    description: 'Hot drinks that perk tired guests up.', satisfies: 120,
+  },
+  {
     id: 'restrooms', name: 'Restrooms', kind: 'toilet', size: 1, cost: 400, price: 0,
     description: 'Guests who need to go will thank you.', satisfies: 255,
   },

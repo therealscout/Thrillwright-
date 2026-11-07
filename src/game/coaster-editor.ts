@@ -32,6 +32,8 @@ export interface PieceOption {
   cost: number;
   ok: boolean;
   reason?: string;
+  /** Still to be researched. */
+  locked?: boolean;
 }
 
 export interface BuilderState {
@@ -49,6 +51,13 @@ export interface BuilderState {
   entrance: TrackCheck & { connected: boolean } | null;
   version: number;
 }
+
+/** Track pieces that need research first, and the feature that unlocks them. */
+const PIECE_FEATURE: Partial<Record<PieceKind, string>> = {
+  'bank-left': 'banked-turns',
+  'bank-right': 'banked-turns',
+  loop: 'loop',
+};
 
 const BUTTONS: Array<{ id: string; label: string; pick: (s: TrackState) => PieceKind | null }> = [
   { id: 'straight', label: 'Straight', pick: () => 'straight' },
@@ -74,7 +83,7 @@ export class CoasterEditor {
   private version = 0;
   private readonly listeners = new Set<(s: BuilderState) => void>();
 
-  constructor(private readonly park: Park) {
+  constructor(private readonly park: Park, private readonly isUnlocked: (feature: string) => boolean = () => true) {
     park.onChange(() => this.emit());
     park.onCash(() => this.emit());
   }
@@ -168,6 +177,7 @@ export class CoasterEditor {
   add(kind: PieceKind): TrackCheck {
     const d = this.design;
     if (!d || this.phase !== 'track') return { ok: false };
+    if (!this.pieceUnlocked(kind)) return { ok: false, reason: 'Research this piece first.' };
     const check = this.canAdd(kind);
     if (!check.ok) return check;
     const piece = this.makePiece(kind);
@@ -201,7 +211,7 @@ export class CoasterEditor {
   buildSample(): TrackCheck {
     const d = this.design;
     if (!d || d.pieces.length !== STATION_LENGTH) return { ok: false, reason: 'Start from a bare station.' };
-    const rest = sampleLayout().slice(STATION_LENGTH);
+    const rest = sampleLayout({ bankedTurns: this.isUnlocked('banked-turns'), loop: this.isUnlocked('loop') }).slice(STATION_LENGTH);
     const trial: CoasterDesign = { start: d.start, pieces: [...d.pieces, ...rest] };
     const check = checkDesign(this.park.terrain, trial);
     if (!check.ok) return { ok: false, reason: `The sample track doesn't fit here: ${check.reason?.toLowerCase()}` };
@@ -271,12 +281,20 @@ export class CoasterEditor {
         const reason = b.id === 'level' ? 'Already level.' : 'Level out first.';
         return { id: b.id, label: b.label, kind: null, cost: 0, ok: false, reason };
       }
+      if (!this.pieceUnlocked(kind)) {
+        return { id: b.id, label: b.label, kind, cost: PIECES[kind].cost, ok: false, locked: true, reason: 'Not researched yet.' };
+      }
       const piece = this.makePiece(kind);
       const cost = PIECES[kind].cost + (piece.lift ? 40 : 0);
       const check = this.canAdd(kind);
       const ok = check.ok && cost <= this.park.cash;
       return { id: b.id, label: b.label, kind, cost, ok, reason: check.ok && !ok ? 'Not enough cash.' : check.reason };
     });
+  }
+
+  private pieceUnlocked(kind: PieceKind): boolean {
+    const feature = PIECE_FEATURE[kind];
+    return !feature || this.isUnlocked(feature);
   }
 
   /** Track changed: old test results no longer apply. */

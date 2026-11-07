@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { buildingType } from './core/catalog';
 import { layTestGrid } from './game/bench';
 import { CoasterEditor } from './game/coaster-editor';
+import { Management } from './game/management';
 import { Park } from './game/park';
 import { createStarterTerrain, starterLayout } from './game/starter-park';
 import { ToolController } from './game/tool-controller';
@@ -16,8 +17,10 @@ const uiRoot = document.getElementById('ui') as HTMLElement;
 const layout = starterLayout();
 const park = new Park(createStarterTerrain());
 const game = new GameRenderer(canvas, park, layout.entrance);
-const coaster = new CoasterEditor(park);
+const management = new Management(park);
+const coaster = new CoasterEditor(park, (feature) => management.isUnlocked(feature));
 const tools = new ToolController(park, game, coaster);
+tools.canBuild = (type) => management.isUnlocked(type);
 game.setDraftSource(() => coaster.draft);
 const entrances = [layout.entrance, { tx: layout.entrance.tx - 1, ty: layout.entrance.ty }];
 /** Guest cap set by the performance panel, overriding normal demand. */
@@ -27,6 +30,20 @@ game.setGuestSource(() => sim.snapshot);
 game.setBuildingStatsSource(() => sim.stats.buildings);
 game.setDirtSource(() => sim.dirt);
 tools.onPickGuest = (tile) => sim.inspectAt(tile);
+
+// The calendar, running costs and research follow simulated time.
+sim.onTime((seconds) => management.advance(seconds));
+management.onUnlock((item) => tools.notify(`Research complete: ${item.name} is now available.`, 'info'));
+let lastDemand = '';
+management.onChange(() => {
+  // Only tell the worker when the fee or marketing actually changed demand.
+  const config = parkDemand();
+  const key = JSON.stringify(config);
+  if (key !== lastDemand) {
+    lastDemand = key;
+    sim.setConfig(config);
+  }
+});
 
 // Tell the player when rides break down and get fixed.
 sim.onEvent((e) => {
@@ -41,17 +58,20 @@ sim.onEvent((e) => {
 });
 
 /**
- * How many guests the park attracts. More rides draw bigger crowds; the park
- * rating (milestone 6) and marketing (milestone 7) will feed in here later.
+ * How many guests the park attracts. More rides draw bigger crowds; the sim
+ * scales this by the park rating, and an entry fee above what the park is
+ * worth puts people off while marketing brings more in.
  */
 function parkDemand() {
   // A coaster draws a crowd like two flat rides.
   const rides = park.buildings.reduce((n, b) => n + (b.coaster ? 2 : buildingType(b.type).kind === 'ride' ? 1 : 0), 0);
   const stalls = park.buildings.filter((b) => buildingType(b.type).kind !== 'ride').length;
+  const pull = management.demandMultiplier(park.buildings);
   return {
-    arrivalRate: 0.4 + rides * 0.35 + stalls * 0.05,
-    maxGuests: benchCap ?? 120 + rides * 220 + stalls * 30,
+    arrivalRate: (0.4 + rides * 0.35 + stalls * 0.05) * (benchCap === null ? pull : 1),
+    maxGuests: benchCap ?? Math.round((120 + rides * 220 + stalls * 30) * Math.min(1.5, pull)),
     useRating: benchCap === null,
+    entryFee: management.entryFee,
   };
 }
 park.onChange(() => sim.setConfig(parkDemand()));
@@ -86,6 +106,6 @@ if (bench > 0) {
 }
 
 // Exposed for automated smoke tests and debugging in the console.
-(window as unknown as { thrillwright: unknown }).thrillwright = { game, park, tools, sim, coaster, devActions };
+(window as unknown as { thrillwright: unknown }).thrillwright = { game, park, tools, sim, coaster, management, devActions };
 
-render(<App game={game} park={park} tools={tools} coaster={coaster} sim={sim} dev={devActions} showHelp={!bench} />, uiRoot);
+render(<App game={game} park={park} tools={tools} coaster={coaster} sim={sim} management={management} dev={devActions} showHelp={!bench} />, uiRoot);

@@ -143,7 +143,14 @@ export class ToolController {
   }
 
   /** Choose a ride or stall and switch to the Build tool. */
+  /** Whether a ride or stall is available yet (research can lock some away). */
+  canBuild: (type: string) => boolean = () => true;
+
   setBuildType(type: string): void {
+    if (!this.canBuild(type)) {
+      this.notify(`${buildingType(type).name} hasn't been researched yet.`);
+      return;
+    }
     if (buildingType(type).custom) {
       this.startCoaster();
       return;

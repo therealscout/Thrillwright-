@@ -1,4 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+/**
+ * Research funding costs a little every second; switch it off so cash checks
+ * are exact, and return the cash left at that point.
+ */
+async function stopResearch(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const w = (window as unknown as { thrillwright: { management: { setFunding(n: number): void }; park: { cash: number } } }).thrillwright;
+    w.management.setFunding(0);
+    return w.park.cash;
+  });
+}
+
+const dollars = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`;
 
 test('game loads, renders and responds to camera controls', async ({ page }) => {
   const errors: string[] = [];
@@ -25,8 +39,9 @@ test('game loads, renders and responds to camera controls', async ({ page }) => 
 test('building a path costs money and can be undone', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Got it' }).click();
+  const start = dollars(await stopResearch(page));
   const cash = page.getByTestId('cash');
-  await expect(cash).toHaveText('$20,000');
+  await expect(cash).toHaveText(start);
 
   await page.locator('[data-tool="path"]').click();
   await expect(page.getByTestId('hint')).toContainText('Path');
@@ -34,10 +49,10 @@ test('building a path costs money and can be undone', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(660, 300, { steps: 4 });
   await page.mouse.up();
-  await expect(cash).not.toHaveText('$20,000');
+  await expect(cash).not.toHaveText(start);
 
   await page.keyboard.press('Control+z');
-  await expect(cash).toHaveText('$20,000');
+  await expect(cash).toHaveText(start);
 });
 
 test('guests arrive at the entrance', async ({ page }) => {
@@ -64,6 +79,7 @@ test('building a stall from the menu and inspecting it', async ({ page }) => {
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Got it' }).click();
+  const start = await stopResearch(page);
   await page.locator('[data-tool="build"]').click();
   await expect(page.getByTestId('build-menu')).toBeVisible();
   await page.locator('[data-build="restrooms"]').click();
@@ -75,7 +91,7 @@ test('building a stall from the menu and inspecting it', async ({ page }) => {
   await page.mouse.move(size.width / 2, size.height / 2);
   await page.mouse.click(size.width / 2, size.height / 2);
   await expect.poll(() => page.evaluate(() => (window as unknown as { thrillwright: { park: { buildings: unknown[] } } }).thrillwright.park.buildings.length)).toBe(1);
-  await expect(page.getByTestId('cash')).toHaveText('$19,600');
+  await expect(page.getByTestId('cash')).toHaveText(dollars(start - 400));
 
   // Inspect it with the Look tool.
   await page.keyboard.press('Escape');

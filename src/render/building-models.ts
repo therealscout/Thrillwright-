@@ -252,6 +252,8 @@ export function createModel(typeId: string): BuildingModel {
     case 'burger-stand': return stall('#ef476f', '#ffd166', '#8a5a3b');
     case 'popcorn-cart': return stall('#ff595e', '#ffffff', '#fee440');
     case 'lemonade-stand': return stall('#fee440', '#ffffff', '#06d6a0');
+    case 'ice-cream-cart': return stall('#9bf6ff', '#ffffff', '#ffadad');
+    case 'coffee-kiosk': return stall('#6f4e37', '#f5ebe0', '#e3d5ca');
     case 'restrooms': return restrooms();
     default: {
       const size = buildingType(typeId).size;

@@ -295,3 +295,35 @@ kbd {
 @media (max-width: 600px) {
   .help { left: 12px; right: 12px; width: auto; }
 }
+
+/* ---- Manage panel (milestone 7) ---------------------------------------- */
+.topbar .date { color: var(--ui-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.tabs .tab { flex: 1; font-size: 12px; }
+.tabs .tab.active, .segmented button.active { background: rgba(255, 209, 102, 0.25); border-color: var(--ui-accent); }
+.segmented { display: flex; gap: 4px; }
+.segmented button { flex: 1; font-size: 12px; }
+.panel h3 .link { float: right; padding: 0 6px; height: auto; font-size: 11px; text-transform: none; letter-spacing: 0; background: none; border: none; color: var(--ui-accent); cursor: pointer; }
+.accounts { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+.accounts th { text-align: left; font-weight: 400; color: var(--ui-muted); padding: 2px 0; }
+.accounts thead th { font-size: 11px; }
+.accounts td { text-align: right; padding: 2px 0 2px 8px; }
+.accounts thead th:not(:first-child) { text-align: right; }
+.accounts tfoot th, .accounts tfoot td { border-top: 1px solid var(--ui-border); padding-top: 4px; font-weight: 600; }
+.accounts .bad { color: var(--ui-pink); }
+.accounts .good { color: #06d6a0; }
+.chart { position: relative; margin-bottom: 6px; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .baseline { stroke: var(--ui-border); stroke-width: 1; }
+.chart .bar-up { fill: #06d6a0; }
+.chart .bar-down { fill: var(--ui-pink); }
+.chart .axis { fill: var(--ui-muted); font-size: 8px; text-anchor: middle; }
+.chart-tip { position: absolute; top: 0; right: 0; padding: 2px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); font-size: 12px; pointer-events: none; }
+.campaigns { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 10px; }
+.campaigns li > div:first-child { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.campaigns .note, .campaigns .status-line { margin: 0; }
+.checks, .discovered { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.checks label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.discovered li::before { content: '✓ '; color: #06d6a0; }
+.panel.manage { max-height: calc(100vh - 190px); overflow-y: auto; }
+.piece-grid button.locked { opacity: 0.45; font-style: italic; }
