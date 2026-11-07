@@ -7,7 +7,7 @@
 export const TILE_SIZE = 1;
 
 /** World units per terrain height step. */
-export const HEIGHT_STEP = 0.25;
+export const HEIGHT_STEP = 0.5;
 
 /** The four classic view directions, in 90 degree steps. */
 export type Rotation = 0 | 1 | 2 | 3;

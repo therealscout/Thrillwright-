@@ -2,7 +2,7 @@
 
 An original, browser-based theme park builder: grow a park from an empty field, design roller coasters piece by piece, and keep thousands of guests happy, each with their own needs and opinions.
 
-Status: **milestone 1 (project setup)**. See [docs/](docs/) for milestone notes.
+Status: **milestone 2 (world editing)**. See [docs/](docs/) for milestone notes.
 
 ## Play locally
 
@@ -22,6 +22,9 @@ Then open the URL Vite prints (usually http://localhost:5173).
 | Move camera | W A S D or arrow keys, or right-drag |
 | Zoom | Mouse wheel, or + / − |
 | Rotate view | Q / E |
+| Build tools | 1–7 (Esc for none) |
+| Brush size | [ / ] |
+| Undo / redo | Ctrl+Z / Ctrl+Y |
 
 ## Scripts
 
@@ -38,7 +41,8 @@ Then open the URL Vite prints (usually http://localhost:5173).
 
 ```
 src/
-  core/     pure game math and data (grid, terrain), unit tested
+  core/     pure game math, data and rules (grid, terrain, editing), unit tested
+  game/     game state: park, tools, starter map
   render/   Three.js scene, camera and input
   ui/       Preact HUD and windows
 e2e/        Playwright browser tests

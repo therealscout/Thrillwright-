@@ -13,8 +13,26 @@ test('game loads, renders and responds to camera controls', async ({ page }) => 
   await page.keyboard.press('e');
   await expect(page.getByTestId('status')).toContainText('South-east');
 
-  await page.mouse.move(400, 400);
+  await page.mouse.move(640, 300);
   await expect(page.getByTestId('status')).toContainText(/Tile: \d+, \d+/);
 
   expect(errors).toEqual([]);
+});
+
+test('building a path costs money and can be undone', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Got it' }).click();
+  const cash = page.getByTestId('cash');
+  await expect(cash).toHaveText('$20,000');
+
+  await page.locator('[data-tool="path"]').click();
+  await expect(page.getByTestId('hint')).toContainText('Path');
+  await page.mouse.move(640, 300);
+  await page.mouse.down();
+  await page.mouse.move(660, 300, { steps: 4 });
+  await page.mouse.up();
+  await expect(cash).not.toHaveText('$20,000');
+
+  await page.keyboard.press('Control+z');
+  await expect(cash).toHaveText('$20,000');
 });
