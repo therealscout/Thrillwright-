@@ -9,6 +9,9 @@ interface Props {
   building: Building;
   stats: BuildingStats | undefined;
   onPrice(value: number): void;
+  /** How many other buildings share this one's type, and a way to price them all alike. */
+  sameType?: { count: number; differ: boolean };
+  onPriceAll?(): void;
   onToggleOpen(): void;
   onDemolish(): void;
   onClose(): void;
@@ -17,7 +20,7 @@ interface Props {
   onWatch?(on: boolean): void;
 }
 
-export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolish, onClose, watching, onWatch }: Props) {
+export function BuildingInfo({ building, stats, onPrice, sameType, onPriceAll, onToggleOpen, onDemolish, onClose, watching, onWatch }: Props) {
   const type = buildingType(building.type);
   const r = building.coaster?.ratings;
   const excitement = r?.excitement ?? type.excitement;
@@ -89,6 +92,17 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
           <button type="button" onClick={() => onPrice(building.price + 0.5)} aria-label="Raise price">+</button>
         </div>
       )}
+      {type.kind !== 'toilet' && !building.coaster && sameType && sameType.count > 0 && onPriceAll && (
+        <p class="price-all">
+          {sameType.differ ? (
+            <button type="button" class="link" data-testid="price-all" onClick={onPriceAll}>
+              Charge {price.format(building.price)} at all {sameType.count + 1} {plural(type.name)}
+            </button>
+          ) : (
+            <span>All {sameType.count + 1} {plural(type.name)} charge {price.format(building.price)}.</span>
+          )}
+        </p>
+      )}
       <div class="row">
         {building.coaster && onWatch && (
           <button type="button" class={watching ? 'primary' : ''} aria-pressed={!!watching} data-testid="watch" onClick={() => onWatch(!watching)}>
@@ -136,4 +150,9 @@ function waitText(queue: number, perRun: number, cycle: number): string {
   if (queue === 0) return 'None';
   const seconds = Math.ceil(queue / Math.max(perRun, 1)) * cycle;
   return seconds < 60 ? 'Under a minute' : `About ${Math.round(seconds / 60)} min`;
+}
+
+/** "Burger Stand" to "Burger Stands", "Coffee Kiosk" to "Coffee Kiosks". */
+export function plural(name: string): string {
+  return /(s|sh|ch)$/.test(name) ? `${name}es` : `${name}s`;
 }

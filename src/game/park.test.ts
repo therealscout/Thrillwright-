@@ -101,4 +101,15 @@ describe('Park buildings', () => {
     park.setPrice(building!.id, -4);
     expect(park.buildings[0]!.price).toBe(0);
   });
+
+  it('prices every stall of a type at once', () => {
+    const park = makePark();
+    const a = park.placeBuilding('burger-stand', { tx: 2, ty: 2 }, 2).building!;
+    const b = park.placeBuilding('burger-stand', { tx: 5, ty: 2 }, 2).building!;
+    const c = park.placeBuilding('popcorn-cart', { tx: 2, ty: 5 }, 2).building!;
+    park.setPrice(a.id, 4);
+    park.setPriceForType('burger-stand', 4.2);
+    expect(park.buildings.find((x) => x.id === b.id)!.price).toBe(4);
+    expect(park.buildings.find((x) => x.id === c.id)!.price).toBe(2);
+  });
 });

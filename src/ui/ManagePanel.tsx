@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { Building } from '../core/buildings';
+import { buildingType } from '../core/catalog';
 import { CATEGORY_NAMES, FUNDING, RESEARCH, type ResearchCategory } from '../core/research';
 import {
   CAMPAIGNS,
@@ -12,14 +13,17 @@ import {
   type Management,
   type MonthAccount,
 } from '../game/management';
-import { money } from './format';
+import { money, price } from './format';
+import { plural } from './BuildingInfo';
 
-type Tab = 'finances' | 'marketing' | 'research';
+type Tab = 'finances' | 'prices' | 'marketing' | 'research';
 
 interface Props {
   management: Management;
   buildings: readonly Building[];
   cash: number;
+  /** Set the price of every building of a type at once. */
+  onPriceType(type: string, price: number): void;
   onClose(): void;
 }
 
@@ -31,7 +35,7 @@ function profit(m: MonthAccount): number {
   return sum;
 }
 
-export function ManagePanel({ management: m, buildings, cash, onClose }: Props) {
+export function ManagePanel({ management: m, buildings, cash, onPriceType, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('finances');
   return (
     <aside class="panel manage" aria-label="Manage park" data-testid="manage-panel">
@@ -40,7 +44,7 @@ export function ManagePanel({ management: m, buildings, cash, onClose }: Props) 
         <button type="button" class="close" onClick={onClose} aria-label="Close">×</button>
       </div>
       <div class="tabs" role="tablist">
-        {(['finances', 'marketing', 'research'] as const).map((t) => (
+        {(['finances', 'prices', 'marketing', 'research'] as const).map((t) => (
           <button
             type="button"
             key={t}
@@ -55,9 +59,57 @@ export function ManagePanel({ management: m, buildings, cash, onClose }: Props) 
         ))}
       </div>
       {tab === 'finances' && <Finances m={m} buildings={buildings} cash={cash} />}
+      {tab === 'prices' && <Prices buildings={buildings} onPriceType={onPriceType} />}
       {tab === 'marketing' && <Marketing m={m} />}
       {tab === 'research' && <Research m={m} />}
     </aside>
+  );
+}
+
+/** One row per kind of stall or ride in the park, priced all together. */
+function Prices({ buildings, onPriceType }: { buildings: readonly Building[]; onPriceType(type: string, price: number): void }) {
+  const groups = new Map<string, number[]>();
+  for (const b of buildings) {
+    const t = buildingType(b.type);
+    if (t.custom || t.kind === 'toilet') continue;
+    groups.set(b.type, [...(groups.get(b.type) ?? []), b.price]);
+  }
+  const rows = [...groups.entries()].map(([id, prices]) => {
+    const t = buildingType(id);
+    const lo = Math.min(...prices);
+    const hi = Math.max(...prices);
+    // Step from the price most of them charge.
+    const tally = new Map<number, number>();
+    for (const p of prices) tally.set(p, (tally.get(p) ?? 0) + 1);
+    const usual = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? lo;
+    return { id, t, count: prices.length, lo, hi, usual };
+  });
+  const section = (title: string, list: typeof rows) =>
+    list.length > 0 && (
+      <>
+        <h3>{title}</h3>
+        {list.map((r) => (
+          <div class="price-row" key={r.id} data-testid={`price-type-${r.id}`}>
+            <span>
+              {r.count > 1 ? `${r.count} ${plural(r.t.name)}` : r.t.name}
+              {r.lo !== r.hi && <small> ({price.format(r.lo)}–{price.format(r.hi)})</small>}
+            </span>
+            <button type="button" onClick={() => onPriceType(r.id, r.usual - 0.5)} aria-label={`Lower the price at every ${r.t.name}`}>−</button>
+            <strong>{price.format(r.usual)}</strong>
+            <button type="button" onClick={() => onPriceType(r.id, r.usual + 0.5)} aria-label={`Raise the price at every ${r.t.name}`}>+</button>
+          </div>
+        ))}
+      </>
+    );
+  const stalls = rows.filter((r) => r.t.kind !== 'ride');
+  const rides = rows.filter((r) => r.t.kind === 'ride');
+  return (
+    <>
+      <p class="note">Each change applies to every one of that kind in the park. Coasters keep their own ticket prices.</p>
+      {rows.length === 0 && <p class="note">Build some stalls or rides first.</p>}
+      {section('Food and drink', stalls)}
+      {section('Rides', rides)}
+    </>
   );
 }
 

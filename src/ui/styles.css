@@ -192,6 +192,8 @@ button.danger:hover:not(:disabled) { background: rgba(239, 71, 111, 0.35); }
 .status-line.broken { color: var(--ui-pink); font-weight: 600; }
 .ride-hints { margin: 0 0 10px; padding: 8px 10px 8px 26px; border-radius: 8px; background: rgba(255, 209, 102, 0.12); font-size: 12px; line-height: 1.4; }
 .ride-hints li + li { margin-top: 4px; }
+.price-all { margin: -4px 0 10px; font-size: 12px; color: var(--ui-muted); }
+.price-all button.link { padding: 0; font-weight: 600; text-decoration: underline; }
 .ride-hints button.link { margin-left: 6px; padding: 0; font-weight: 600; text-decoration: underline; }
 .rating-big { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .rating-big strong { font-size: 30px; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
@@ -304,7 +306,7 @@ kbd {
 /* ---- Manage panel (milestone 7) ---------------------------------------- */
 .topbar .date { color: var(--ui-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-.tabs .tab { flex: 1; font-size: 12px; }
+.tabs .tab { flex: 1 1 0; min-width: 0; padding: 0 4px; font-size: 12px; }
 .tabs .tab.active, .segmented button.active { background: rgba(255, 209, 102, 0.25); border-color: var(--ui-accent); }
 .segmented { display: flex; gap: 4px; }
 .segmented button { flex: 1; font-size: 12px; }

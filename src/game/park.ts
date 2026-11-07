@@ -281,6 +281,18 @@ export class Park {
     this.changed();
   }
 
+  /** Give every building of one type the same price, e.g. all burger stands. */
+  setPriceForType(type: string, price: number): void {
+    const value = Math.max(0, Math.min(20, Math.round(price * 2) / 2));
+    let changed = false;
+    for (const b of this.buildings) {
+      if (b.type !== type || b.price === value) continue;
+      b.price = value;
+      changed = true;
+    }
+    if (changed) this.changed();
+  }
+
   setOpen(id: number, open: boolean): void {
     const b = this.buildings.find((x) => x.id === id);
     if (!b || b.open === open) return;
