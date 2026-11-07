@@ -36,6 +36,13 @@ export interface Terrain {
   readonly blocked: Uint8Array;
   /** Path furniture per tile (see PathItem). */
   readonly items: Uint8Array;
+  /**
+   * Lowest and highest coaster track over each tile, as height + 1 (0 means
+   * no track). Worked out from the coasters, not saved. Paths and other track
+   * may pass under or over with enough headroom.
+   */
+  readonly trackLow: Uint8Array;
+  readonly trackHigh: Uint8Array;
 }
 
 /** Things that stand on a path tile. */
@@ -59,6 +66,8 @@ export function createTerrain(width: number, height: number): Terrain {
     owned: new Uint8Array(tiles),
     blocked: new Uint8Array(tiles),
     items: new Uint8Array(tiles),
+    trackLow: new Uint8Array(tiles),
+    trackHigh: new Uint8Array(tiles),
   };
 }
 
@@ -130,6 +139,8 @@ export function cloneTerrain(t: Terrain): Terrain {
     owned: t.owned.slice(),
     blocked: t.blocked.slice(),
     items: t.items.slice(),
+    trackLow: t.trackLow.slice(),
+    trackHigh: t.trackHigh.slice(),
   };
 }
 
@@ -142,4 +153,6 @@ export function restoreTerrain(target: Terrain, source: Terrain): void {
   target.owned.set(source.owned);
   target.blocked.set(source.blocked);
   target.items.set(source.items);
+  target.trackLow.set(source.trackLow);
+  target.trackHigh.set(source.trackHigh);
 }

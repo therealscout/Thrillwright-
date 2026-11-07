@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { PathItem, tileIndex, tileNoise, type Terrain } from '../core/terrain';
+import { palette } from './palette';
 import { tileCentreY } from './terrain-mesh';
 
 const SIDES: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -72,12 +73,16 @@ export class PathLayer {
   private readonly benches: Pool;
   private readonly litter: Pool;
   private readonly vomit: Pool;
+  private readonly rails: Pool;
+  private readonly posts: Pool;
   private dirtVersion = -1;
 
   constructor() {
     this.bins = new Pool(this.group, binGeometry(), lambert('#5c6b7a'));
     this.benches = new Pool(this.group, benchGeometry(), lambert('#9c6b3f'));
     this.litter = new Pool(this.group, new THREE.BoxGeometry(0.05, 0.012, 0.035), new THREE.MeshLambertMaterial({ color: '#ffffff' }), 256, false);
+    this.rails = new Pool(this.group, new THREE.BoxGeometry(1, 0.035, 0.035), lambert(palette.queueRail), 128);
+    this.posts = new Pool(this.group, new THREE.BoxGeometry(0.045, 0.26, 0.045).translate(0, 0.13, 0), lambert('#2b2d42'), 128);
     this.vomit = new Pool(this.group, new THREE.CircleGeometry(0.11, 7).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#9bb53a' }), 64, false);
   }
 
@@ -116,6 +121,38 @@ export class PathLayer {
     }
     this.bins.set(bins);
     this.benches.set(benches);
+    this.syncQueueRails(t);
+  }
+
+  /** Railings along queue lines, open where they meet a path or the ride. */
+  private syncQueueRails(t: Terrain): void {
+    const rails: THREE.Matrix4[] = [];
+    const posts: THREE.Matrix4[] = [];
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let ty = 0; ty < t.height; ty++) {
+      for (let tx = 0; tx < t.width; tx++) {
+        if (t.paths[tileIndex(t, tx, ty)] !== 2) continue;
+        const y = tileCentreY(t, tx, ty) + 0.04;
+        for (let s = 0; s < 4; s++) {
+          const [dx, dy] = SIDES[s] as readonly [number, number];
+          const nx = tx + dx, ny = ty + dy;
+          const inside = nx >= 0 && ny >= 0 && nx < t.width && ny < t.height;
+          const n = inside ? tileIndex(t, nx, ny) : -1;
+          if (n >= 0 && (t.paths[n] || t.blocked[n])) continue;
+          // A rail along this edge, just inside the tile.
+          const cx = tx + 0.5 + dx * 0.44;
+          const cz = ty + 0.5 + dy * 0.44;
+          q.setFromAxisAngle(up, dx !== 0 ? Math.PI / 2 : 0);
+          rails.push(new THREE.Matrix4().compose(new THREE.Vector3(cx, y + 0.22, cz), q, new THREE.Vector3(0.9, 1, 1)));
+          for (const e of [-0.44, 0.44]) {
+            posts.push(new THREE.Matrix4().makeTranslation(cx + (dy !== 0 ? e : 0), y, cz + (dx !== 0 ? e : 0)));
+          }
+        }
+      }
+    }
+    this.rails.set(rails);
+    this.posts.set(posts);
   }
 
   /** Redraw litter and sick when the simulation sends a new picture. */

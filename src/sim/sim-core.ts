@@ -7,6 +7,8 @@
  * do next) only once a second, staggered across ticks so the work is spread
  * evenly.
  */
+import { fairPrice } from '../core/pricing';
+export { fairPrice, suggestedTicket } from '../core/pricing';
 import { HEIGHT_STEP } from '../core/grid';
 import { GuestState, GuestStore } from './guests';
 import { DIRS, UNREACHABLE, buildDistanceMap, isPath, type PathGrid } from './path-map';
@@ -30,6 +32,53 @@ export const SNAPSHOT_STRIDE = 8;
 
 /** Seconds a ride waits for a full load before running part-full. */
 export const LOAD_WAIT = 8;
+
+/** Gap between guests standing in a queue line, in tiles. */
+export const QUEUE_SPACING = 0.34;
+/** How fast guests shuffle forward in a queue line, tiles per second. */
+const QUEUE_WALK = 0.9;
+
+/** Value in the paths layer for a queue line (1 is an ordinary path). */
+export const QUEUE_TILE = 2;
+
+/**
+ * A ride's queue line: the chain of queue tiles from its entrance to where
+ * the line meets an ordinary path (the longest such chain if it branches).
+ */
+export function findQueueLine(world: PathGrid, ax: number, ay: number): { tiles: Array<{ tx: number; ty: number }>; join: { tx: number; ty: number } } | null {
+  const { width, height, paths } = world;
+  const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < width && y < height ? (paths[y * width + x] as number) : 0);
+  if (at(ax, ay) !== QUEUE_TILE) return null;
+  const parent = new Map<number, number>([[ay * width + ax, -1]]);
+  const order = [ay * width + ax];
+  let best: { k: number; join: number } | null = null;
+  for (let h = 0; h < order.length; h++) {
+    const k = order[h] as number;
+    const x = k % width;
+    const y = (k - x) / width;
+    for (const [dx, dy] of DIRS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const v = at(nx, ny);
+      const n = ny * width + nx;
+      if (v === 1) best = { k, join: n };
+      else if (v === QUEUE_TILE && !parent.has(n)) {
+        parent.set(n, k);
+        order.push(n);
+      }
+    }
+  }
+  if (!best) return null;
+  const tiles: Array<{ tx: number; ty: number }> = [];
+  for (let k = best.k; k !== -1; k = parent.get(k) as number) tiles.push({ tx: k % width, ty: Math.floor(k / width) });
+  tiles.reverse();
+  return { tiles, join: { tx: best.join % width, ty: Math.floor(best.join / width) } };
+}
+
+/** Length of a queue line in tiles (its first tile's centre is the front). */
+function queueLength(line: ReadonlyArray<unknown>): number {
+  return Math.max(0, line.length - 1) + 0.4;
+}
 
 /** What the simulation needs to know about a ride or stall. */
 export interface SimBuilding {
@@ -72,6 +121,15 @@ export interface BuildingStats {
   id: number;
   queue: number;
   riders: number;
+  /** Look (shirt and skin colours) of each guest on board, for drawing riders. */
+  looks?: number[];
+  /** Can guests walk from the park entrance to this building's entrance? */
+  reachable: boolean;
+  /**
+   * Rides: how many guests recently looked at this ride and turned it down,
+   * and why (decays over a minute or so). Explains an empty ride.
+   */
+  refused?: { intense: number; price: number; queue: number };
   /** 0..1 progress through the current ride cycle; 0 while loading. */
   phase: number;
   customers: number;
@@ -151,6 +209,10 @@ interface BuildingRuntime {
   timer: number;
   queue: number;
   riders: number;
+  /** Looks of the guests on board. */
+  looks: number[];
+  /** Recent guests who turned the ride down: too intense, too pricey, queue too long. */
+  refused: { intense: number; price: number; queue: number };
   customers: number;
   revenue: number;
   reliability: number;
@@ -158,6 +220,13 @@ interface BuildingRuntime {
   downtime: number;
   /** Staff id of the mechanic on the way, or 0. */
   mechanic: number;
+  /**
+   * The ride's queue line, if it has one: tile centres from the entrance
+   * outwards. Guests join at the far end and shuffle forward along it.
+   */
+  line: Array<{ x: number; z: number }> | null;
+  /** How far along the line each queuing guest (by id) is standing now. */
+  places: Map<number, number>;
 }
 
 /** Staff walking speed, tiles per second. */
@@ -166,10 +235,6 @@ const STAFF_SPEED = 1.4;
 const SWEEP_RANGE = 24;
 
 /** The most a guest happily pays for a ride of this excitement, in dollars. */
-export function fairPrice(excitement: number): number {
-  return excitement * 0.9 + 1.5;
-}
-
 export const EMPTY_AVERAGES: GuestAverages = { happiness: 0, hunger: 0, thirst: 0, toilet: 0, energy: 0, nausea: 0, cash: 0 };
 
 export class SimCore {
@@ -290,6 +355,7 @@ export class SimCore {
       if (!this.move(i)) this.removeGuest(i);
     }
     this.runRides();
+    this.shuffleQueues();
     for (let i = 0; i < this.staff.count; i++) this.moveStaff(i);
     if (this.tickCount % TICK_RATE === 0) this.everySecond();
     this.tickTimes.push(performance.now() - start);
@@ -308,6 +374,11 @@ export class SimCore {
         id: b.def.id,
         queue: b.queue,
         riders: b.riders,
+        looks: b.riders ? b.looks : undefined,
+        reachable: this.entrances.some((e) => (b.dist[e.ty * this.world.width + e.tx] as number) !== UNREACHABLE),
+        refused: b.def.kind === 'ride'
+          ? { intense: Math.round(b.refused.intense), price: Math.round(b.refused.price), queue: Math.round(b.refused.queue) }
+          : undefined,
         phase: b.running ? Math.min(b.timer / b.def.cycle, 1) : 0,
         customers: b.customers,
         revenue: b.revenue,
@@ -360,7 +431,24 @@ export class SimCore {
       let lane = g.lane[i] as number;
       let along = 0;
       if (g.state[i] === GuestState.Queuing) {
-        // Cluster waiting guests around the entrance.
+        const b = this.buildings.get(g.target[i] as number);
+        const spot = b ? this.queueSpot(b, i) : null;
+        if (spot) {
+          const o = n * SNAPSHOT_STRIDE;
+          const y = this.heightAt(spot.x, spot.z);
+          const l = Math.hypot(spot.dx, spot.dz) || 1;
+          out[o] = spot.x;
+          out[o + 1] = y;
+          out[o + 2] = spot.z;
+          out[o + 3] = spot.moving ? (spot.dx / l) * QUEUE_WALK : 0;
+          out[o + 4] = 0;
+          out[o + 5] = spot.moving ? (spot.dz / l) * QUEUE_WALK : 0;
+          out[o + 6] = Math.atan2(spot.dx, spot.dz);
+          out[o + 7] = g.look[i] as number;
+          n++;
+          continue;
+        }
+        // No queue line: cluster waiting guests around the entrance.
         const t = (g.ticket[i] as number) % 9;
         lane = ((t % 3) - 1) * 0.25;
         along = (Math.floor(t / 3) - 1) * 0.25;
@@ -523,6 +611,7 @@ export class SimCore {
       const d = b.def;
       if (d.kind !== 'ride' || !d.open || b.broken || d.id === g.lastRide[i] || d.price > (g.cash[i] as number)) continue;
       if (d.intensity > pref + 2.5) {
+        b.refused.intense++;
         if (g.random(i) < 0.03) this.think_(i, Thought.TooIntense, d.id);
         continue;
       }
@@ -531,12 +620,14 @@ export class SimCore {
       if (dist === UNREACHABLE) continue;
       // Guests have a feel for what a ride is worth.
       if (d.price > fairPrice(d.excitement) + g.random(i)) {
+        b.refused.price++;
         if (g.random(i) < 0.15) this.think_(i, Thought.TooExpensive, d.id);
         continue;
       }
       const fit = d.excitement - Math.abs(d.intensity - pref) * 0.6;
       const wait = b.queue / Math.max(d.capacity, 1);
       if (wait > 4) {
+        b.refused.queue++;
         if (g.random(i) < 0.08) this.think_(i, Thought.QueueTooLong, d.id);
         continue;
       }
@@ -727,6 +818,76 @@ export class SimCore {
     b.customers++;
   }
 
+  /**
+   * Guests in a queue line walk forward to their place in it: first come,
+   * first in line, QUEUE_SPACING apart, starting at the entrance.
+   */
+  private shuffleQueues(): void {
+    let any = false;
+    for (const b of this.buildings.values()) if (b.line) any = true;
+    if (!any) return;
+    const g = this.guests;
+    this.queueMoving.clear();
+    const waiting = new Map<number, number[]>();
+    for (let i = 0; i < g.count; i++) {
+      if (g.state[i] !== GuestState.Queuing) continue;
+      const b = this.buildings.get(g.target[i] as number);
+      if (!b?.line) continue;
+      let list = waiting.get(b.def.id);
+      if (!list) waiting.set(b.def.id, (list = []));
+      list.push(i);
+    }
+    for (const b of this.buildings.values()) {
+      if (!b.line) continue;
+      const list = waiting.get(b.def.id) ?? [];
+      list.sort((a, c) => (g.ticket[a] as number) - (g.ticket[c] as number));
+      const end = queueLength(b.line);
+      const seen = new Set<number>();
+      list.forEach((i, rank) => {
+        const id = g.id[i] as number;
+        seen.add(id);
+        const want = Math.min(rank * QUEUE_SPACING, end + 0.4);
+        const now = b.places.get(id) ?? end + 0.4;
+        const next = Math.max(want, now - QUEUE_WALK * TICK_SECONDS);
+        if (next < now - 1e-4) this.queueMoving.add(id);
+        b.places.set(id, next);
+      });
+      for (const id of b.places.keys()) if (!seen.has(id)) b.places.delete(id);
+    }
+  }
+
+  /** Where a guest stands in a queue line, and which way they face. */
+  private queueSpot(b: BuildingRuntime, i: number): { x: number; z: number; dx: number; dz: number; moving: boolean } | null {
+    const line = b.line;
+    if (!line || line.length === 0) return null;
+    const g = this.guests;
+    const d = b.places.get(g.id[i] as number);
+    if (d === undefined) return null;
+    const end = queueLength(line);
+    // Past the end of a full line: wait in a huddle where it meets the path.
+    const along = Math.min(d, end);
+    const k = Math.min(Math.floor(along), line.length - 1);
+    const a = line[k] as { x: number; z: number };
+    const c = line[Math.min(k + 1, line.length - 1)] as { x: number; z: number };
+    const f = along - k;
+    const dx = a.x - c.x;
+    const dz = a.z - c.z;
+    // Alternate a little side to side so the line looks like people, not beads.
+    const sway = ((g.id[i] as number) % 3 - 1) * 0.08;
+    const len = Math.hypot(dx, dz) || 1;
+    const over = Math.max(0, d - end);
+    return {
+      x: a.x + (c.x - a.x) * f - (dz / len) * sway + (over > 0 ? Math.sin(g.id[i] as number) * 0.3 : 0),
+      z: a.z + (c.z - a.z) * f + (dx / len) * sway + (over > 0 ? Math.cos(g.id[i] as number) * 0.3 : 0),
+      dx: k === line.length - 1 && line.length > 1 ? (line[k - 1] as { x: number }).x - a.x : dx,
+      dz: k === line.length - 1 && line.length > 1 ? (line[k - 1] as { z: number }).z - a.z : dz,
+      moving: this.queueMoving.has(g.id[i] as number),
+    };
+  }
+
+  /** Guests who moved forward in a queue this tick (for the walking animation). */
+  private readonly queueMoving = new Set<number>();
+
   /** Load, run and unload every ride. */
   private runRides(): void {
     for (const b of this.buildings.values()) {
@@ -756,6 +917,7 @@ export class SimCore {
     for (const i of boarding) g.state[i] = GuestState.Riding;
     b.queue -= boarding.length;
     b.riders = boarding.length;
+    b.looks = boarding.map((i) => g.look[i] as number);
     b.running = true;
     b.timer = 0;
   }
@@ -779,6 +941,7 @@ export class SimCore {
       g.rides[i] = (g.rides[i] as number) + 1;
     }
     b.riders = 0;
+    b.looks = [];
     b.running = false;
     b.timer = 0;
     // Every run wears the ride a little; worn rides break down more often.
@@ -791,12 +954,16 @@ export class SimCore {
     const next = new Map<number, BuildingRuntime>();
     for (const def of this.world.buildings ?? []) {
       const old = this.buildings.get(def.id);
-      const dist = buildDistanceMap(this.world, [{ tx: def.ax, ty: def.ay }]);
+      const queue = def.kind === 'ride' ? findQueueLine(this.world, def.ax, def.ay) : null;
+      // With a queue line, guests walk to where it meets the paths instead of to the entrance.
+      const goal = queue ? queue.join : { tx: def.ax, ty: def.ay };
+      const dist = buildDistanceMap(this.world, [goal]);
+      const line = queue ? queue.tiles.map(({ tx, ty }) => ({ x: tx + 0.5, z: ty + 0.5 })) : null;
       next.set(
         def.id,
         old
-          ? { ...old, def, dist }
-          : { def, dist, running: false, timer: 0, queue: 0, riders: 0, customers: 0, revenue: 0, reliability: 100, broken: false, downtime: 0, mechanic: 0 },
+          ? { ...old, def, dist, line }
+          : { def, dist, line, places: new Map(), running: false, timer: 0, queue: 0, riders: 0, looks: [], refused: { intense: 0, price: 0, queue: 0 }, customers: 0, revenue: 0, reliability: 100, broken: false, downtime: 0, mechanic: 0 },
       );
     }
     this.buildings = next;
@@ -811,7 +978,6 @@ export class SimCore {
         g.cash[i] = (g.cash[i] as number) + b.def.price;
         this.income -= b.def.price;
       this.incomeBy.rides -= b.def.price;
-        this.incomeBy.rides -= b.def.price;
         b.revenue -= b.def.price;
       }
       g.state[i] = GuestState.Wandering;
@@ -991,6 +1157,11 @@ export class SimCore {
 
   private everySecond(): void {
     this.thoughts.decay();
+    for (const b of this.buildings.values()) {
+      b.refused.intense *= 0.97;
+      b.refused.price *= 0.97;
+      b.refused.queue *= 0.97;
+    }
     this.unhappyLeavers *= 0.99;
     this.rebuildDirtMap();
     for (let i = 0; i < this.staff.count; i++) this.staffThink(i);

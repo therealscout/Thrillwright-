@@ -28,16 +28,18 @@ import {
   buildGridGeometry,
   buildPathGeometry,
   buildTerrainGeometry,
-  buildWaterGeometry,
   tileCentreY,
   tileFromFace,
 } from './terrain-mesh';
+import { buildWaterGeometry, createWaterMaterial, type WaterMaterial } from './water';
 
 export interface RendererStats {
   fps: number;
   rotation: Rotation;
   zoom: number;
   hoveredTile: TileCoord | null;
+  /** Coaster the camera is following, or null. */
+  watching: number | null;
 }
 
 export type TilePointerEvent = { kind: 'down' | 'move' | 'up'; tile: TileCoord | null; shift: boolean };
@@ -64,6 +66,7 @@ export class GameRenderer {
   private readonly ground: THREE.Mesh;
   private readonly grid: THREE.LineSegments;
   private readonly water: THREE.Mesh;
+  private readonly waterMaterial: WaterMaterial;
   private readonly paths: THREE.Mesh;
   private readonly brush: THREE.Mesh;
   private readonly brushMaterial: THREE.MeshBasicMaterial;
@@ -76,7 +79,7 @@ export class GameRenderer {
   private readonly coasterLayer = new CoasterLayer();
   private readonly pathLayer = new PathLayer();
   private dirtSource: (() => { litter: Uint8Array; vomit: Uint8Array; version: number } | null) | null = null;
-  private draftSource: (() => { design: CoasterDesign | null; version: number }) | null = null;
+  private draftSource: (() => { design: CoasterDesign | null; version: number; type?: string }) | null = null;
   private trackGhost: { design: CoasterDesign; valid: boolean } | null = null;
   private guestSource: (() => GuestSnapshot | null) | null = null;
   private buildingStatsSource: (() => readonly BuildingStats[]) | null = null;
@@ -131,10 +134,8 @@ export class GameRenderer {
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({ color: palette.gridLine, transparent: true, opacity: 0.14 }),
     );
-    this.water = new THREE.Mesh(
-      new THREE.BufferGeometry(),
-      new THREE.MeshPhongMaterial({ color: palette.water, transparent: true, opacity: 0.88, shininess: 60, specular: 0x5a7f99 }),
-    );
+    this.waterMaterial = createWaterMaterial();
+    this.water = new THREE.Mesh(new THREE.BufferGeometry(), this.waterMaterial.material);
     this.water.receiveShadow = true;
     this.paths = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     this.paths.receiveShadow = true;
@@ -216,7 +217,7 @@ export class GameRenderer {
   }
 
   /** Where to read the coaster design being edited from each frame. */
-  setDraftSource(source: () => { design: CoasterDesign | null; version: number }): void {
+  setDraftSource(source: () => { design: CoasterDesign | null; version: number; type?: string }): void {
     this.draftSource = source;
   }
 
@@ -225,6 +226,20 @@ export class GameRenderer {
     this.rotation = nextRotation(this.rotation, direction);
     this.emit();
   }
+
+  /** Follow a coaster's train with the camera (null stops). Moving the camera by hand also stops. */
+  watch(id: number | null): void {
+    if (this.watching === id) return;
+    this.watching = id;
+    if (id !== null && this.zoom < 2.5) {
+      this.zoom = 2.5;
+      this.updateProjection();
+    }
+    this.emit();
+  }
+
+  private watching: number | null = null;
+  private readonly watchPoint = new THREE.Vector3();
 
   zoomBy(factor: number): void {
     this.cameraMoved = true;
@@ -276,7 +291,7 @@ export class GameRenderer {
     let n = 0;
     for (const [tx, ty, r] of this.treeSpots) {
       const k = tileIndex(t, tx, ty);
-      if (t.paths[k] || t.water[k] || t.blocked[k]) continue;
+      if (t.paths[k] || t.water[k] || t.blocked[k] || t.trackHigh[k]) continue;
       const scale = 0.75 + r * 0.6;
       pos.set(tx + 0.3 + r * 0.4, tileCentreY(t, tx, ty), ty + 0.3 + (1 - r) * 0.4);
       q.setFromAxisAngle(up, r * Math.PI * 2);
@@ -439,7 +454,10 @@ export class GameRenderer {
     const { width, height } = this.park.terrain;
     this.target.x = clamp(this.target.x + rx * right - fx * down, 0, width);
     this.target.z = clamp(this.target.z + rz * right - fz * down, 0, height);
-    if (right !== 0 || down !== 0) this.cameraMoved = true;
+    if (right !== 0 || down !== 0) {
+      this.cameraMoved = true;
+      this.watch(null);
+    }
   }
 
   // ---- per frame ---------------------------------------------------------
@@ -504,6 +522,7 @@ export class GameRenderer {
     this.lastTime = now;
 
     if (this.park.version !== this.builtVersion) this.rebuildWorld();
+    this.waterMaterial.tick(this.reduceMotion ? 0 : dt);
 
     // Keyboard panning.
     const speed = (PAN_SPEED / this.zoom) * dt;
@@ -516,6 +535,23 @@ export class GameRenderer {
     if (right || down) {
       this.panScreen(right, down);
       this.pointerMoved = true;
+    }
+
+    // Follow a train: ease the view toward the front car.
+    if (this.watching !== null) {
+      const p = this.coasterLayer.trainPosition(this.watching, this.watchPoint);
+      if (!p) this.watch(null);
+      else {
+        const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * 4);
+        this.target.x += (p.x - this.target.x) * k;
+        this.target.y += (p.y - this.target.y) * k;
+        this.target.z += (p.z - this.target.z) * k;
+        this.pointerMoved = true;
+      }
+    } else if (this.target.y !== 2) {
+      // Settle back to the usual view height after watching.
+      this.target.y += (2 - this.target.y) * Math.min(1, dt * 4);
+      if (Math.abs(this.target.y - 2) < 0.01) this.target.y = 2;
     }
 
     // Smooth rotation toward the target view.
@@ -545,9 +581,10 @@ export class GameRenderer {
     const draft = this.draftSource?.();
     if (this.trackGhost) {
       const g = this.trackGhost.design.start;
-      this.coasterLayer.setDraft(this.trackGhost.design, this.park.terrain, this.trackGhost.valid, g.tx * 1000 + g.ty);
+      // Include the design's length so switching ready-made designs redraws the ghost.
+      this.coasterLayer.setDraft(this.trackGhost.design, this.park.terrain, this.trackGhost.valid, g.tx * 1000 + g.ty, draft?.type);
     } else {
-      this.coasterLayer.setDraft(draft?.design ?? null, this.park.terrain, true, draft?.version ?? 0);
+      this.coasterLayer.setDraft(draft?.design ?? null, this.park.terrain, true, draft?.version ?? 0, draft?.type);
     }
     this.updateSky(dt);
     this.renderer.render(this.scene, this.camera);
@@ -579,7 +616,7 @@ export class GameRenderer {
   }
 
   private emit(): void {
-    const stats: RendererStats = { fps: this.fps, rotation: this.rotation, zoom: this.zoom, hoveredTile: this.hovered };
+    const stats: RendererStats = { fps: this.fps, rotation: this.rotation, zoom: this.zoom, hoveredTile: this.hovered, watching: this.watching };
     for (const l of this.listeners) l(stats);
   }
 }

@@ -20,6 +20,8 @@ export type PieceKind =
   | 'right'
   | 'bank-left'
   | 'bank-right'
+  | 'small-left'
+  | 'small-right'
   | 'flat-up'
   | 'up'
   | 'up-flat'
@@ -90,11 +92,12 @@ function straightDef(name: string, cost: number): PieceDef {
   };
 }
 
-function turnDef(name: string, side: -1 | 1, bank: number, cost: number): PieceDef {
-  const R = TURN_RADIUS;
+function turnDef(name: string, side: -1 | 1, bank: number, cost: number, small = false): PieceDef {
+  // A small turn fits in one tile (a wild mouse's hairpins); a normal one needs two by two.
+  const R = small ? 0.5 : TURN_RADIUS;
   return {
-    name, from: 0, to: 0, dh: 0, turn: side, next: [1, 2 * side], top: 0, samples: 16, cost,
-    tiles: [[0, 0], [1, 0], [0, side], [1, side]],
+    name, from: 0, to: 0, dh: 0, turn: side, next: small ? [0, side] : [1, 2 * side], top: 0, samples: small ? 8 : 16, cost,
+    tiles: small ? [[0, 0]] : [[0, 0], [1, 0], [0, side], [1, side]],
     sample: (t) => {
       const a = (t * Math.PI) / 2;
       // Bank into the turn, easing in and out.
@@ -123,6 +126,8 @@ export const PIECES: Record<PieceKind, PieceDef> = {
   right: turnDef('Right turn', 1, 0, 180),
   'bank-left': turnDef('Banked left turn', -1, 0.6, 220),
   'bank-right': turnDef('Banked right turn', 1, 0.6, 220),
+  'small-left': turnDef('Tight left turn', -1, 0, 120, true),
+  'small-right': turnDef('Tight right turn', 1, 0, 120, true),
   // 2 steps per tile is a 45 degree slope; transitions ease in and out.
   'flat-up': slopeDef('Start climb', 0, 1, (t) => t * t, (t) => 2 * t, 80),
   up: slopeDef('Climb', 1, 1, (t) => 2 * t, () => 2, 80),

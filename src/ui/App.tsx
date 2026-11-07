@@ -259,9 +259,19 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
             building={selected}
             stats={simStats.buildings.find((b) => b.id === selected.id)}
             onPrice={(v) => park.setPrice(selected.id, v)}
+            sameType={(() => {
+              const others = park.buildings.filter((b) => b.type === selected.type && b.id !== selected.id);
+              return { count: others.length, differ: others.some((b) => b.price !== selected.price) };
+            })()}
+            onPriceAll={() => park.setPriceForType(selected.type, selected.price)}
             onToggleOpen={() => park.setOpen(selected.id, !selected.open)}
             onDemolish={() => park.demolish(selected.id)}
-            onClose={() => tools.select(null)}
+            onClose={() => {
+              game.watch(null);
+              tools.select(null);
+            }}
+            watching={stats?.watching === selected.id}
+            onWatch={(on) => game.watch(on ? selected.id : null)}
           />
         )}
         {showBuild && (
@@ -297,7 +307,13 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
         )}
         {showOptions && <OptionsPanel audio={audio} display={display} onClose={() => setShowOptions(false)} />}
         {showManage && (
-          <ManagePanel management={management} buildings={park.buildings} cash={tool.cash} onClose={() => setShowManage(false)} />
+          <ManagePanel
+            management={management}
+            buildings={park.buildings}
+            cash={tool.cash}
+            onPriceType={(type, v) => park.setPriceForType(type, v)}
+            onClose={() => setShowManage(false)}
+          />
         )}
         {showPerf && (
           <aside class="panel perf" aria-label="Performance test" data-testid="perf">

@@ -57,7 +57,7 @@ export const TUTORIAL: TutorialStep[] = [
     title: 'Build a ride',
     text: 'Open Rides & stalls and place a Carousel beside your path. Turn its entrance with R so it faces the path.',
     hint: 'Rides & stalls (B) · R to turn the entrance',
-    done: (c) => has(c.park, (kind, type) => kind === 'ride' && type !== 'steel-coaster'),
+    done: (c) => has(c.park, (kind, type) => kind === 'ride' && !buildingType(type).custom),
   },
   {
     id: 'riders',
@@ -100,8 +100,8 @@ export const TUTORIAL: TutorialStep[] = [
   {
     id: 'coaster',
     title: 'Build a coaster',
-    text: 'Open the Coaster builder, place a station on open ground, press "Build sample" (or lay your own), test it and open it.',
-    hint: 'Coaster builder (C)',
+    text: 'Open Coasters, place a station on open ground, press "Sample track" (or lay your own), test it and open it. Or pick a Ready-made design and drop it on the map.',
+    hint: 'Coasters (C)',
     done: (c) => c.park.buildings.some((b) => b.coaster !== undefined),
   },
   {

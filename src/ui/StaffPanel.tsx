@@ -42,7 +42,7 @@ export function StaffPanel({ handymen, mechanics, stats, onChange, onClose }: Pr
         <dt>Tiles swept</dt><dd>{count.format(stats.swept)}</dd>
         <dt>Rides repaired</dt><dd>{count.format(stats.repairs)}</dd>
       </dl>
-      <p class="note">New staff start at the park entrance and work wherever paths lead.</p>
+      <p class="note">New staff start at the park entrance and work wherever paths lead. Spot handymen by their yellow hard hats and yellow badges, mechanics by their blue caps and blue badges.</p>
     </aside>
   );
 }

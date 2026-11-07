@@ -29,14 +29,15 @@ Then open the URL Vite prints (usually http://localhost:5173).
 | Land tools | 1–7 (Esc for none) |
 | Bin, bench | 8, 9, then click a path |
 | Staff | Staff button: hire handymen and mechanics |
-| Finances, marketing, research | Manage button |
+| Finances, prices, marketing, research | Manage button |
 | Pause, game speed | P, or the ❚❚ 1× 2× 3× buttons in the top bar |
 | Scenario goal | Click the ◎ Goal chip in the top bar |
 | Sound, display, graphics and accessibility | ⚙ button (top right) |
 | Save | Ctrl+S or 💾 (also saves itself every month) |
 | Park rating and guest thoughts | Click the ★ rating or guest count |
 | Rides and stalls | B, then R to turn the entrance |
-| Coaster builder | C, then R to turn the station |
+| Coasters (ready-made or your own) | C, then R to turn the station |
+| Queue line | L, then paint from a ride's entrance to a path |
 | Ride details | Look tool (Esc), click a ride |
 | Brush size | [ / ] |
 | Undo / redo | Ctrl+Z / Ctrl+Y |

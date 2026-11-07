@@ -36,6 +36,10 @@ export const RESEARCH: ResearchItem[] = [
   { id: 'r-loop', name: 'Vertical loop', category: 'coaster', cost: 420, unlocks: 'loop' },
   { id: 'r-drop', name: 'Drop Tower', category: 'thrill', cost: 480, unlocks: 'drop-tower' },
   { id: 'r-coffee', name: 'Coffee Kiosk', category: 'shops', cost: 360, unlocks: 'coffee-kiosk' },
+  { id: 'r-junior', name: 'Little Dipper', category: 'coaster', cost: 200, unlocks: 'junior-coaster' },
+  { id: 'r-mouse', name: 'Zippy Mouse', category: 'coaster', cost: 380, unlocks: 'wild-mouse' },
+  { id: 'r-wood', name: 'Timber Twister', category: 'coaster', cost: 520, unlocks: 'wooden-coaster' },
+  { id: 'r-inverted', name: 'Skyhanger', category: 'coaster', cost: 700, unlocks: 'inverted-coaster' },
 ];
 
 /** Available from the start in a fresh sandbox park. */

@@ -12,14 +12,17 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { SNAPSHOT_STRIDE } from '../sim/sim-core';
 import type { GuestSnapshot } from '../sim/sim-client';
 
-const SHIRTS = ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#f78c6b', '#9b5de5', '#f15bb5', '#00bbf9', '#fee440', '#8ac926', '#ff595e', '#ffffff'];
-const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524'];
+export const SHIRTS = ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#f78c6b', '#9b5de5', '#f15bb5', '#00bbf9', '#fee440', '#8ac926', '#ff595e', '#ffffff'];
+export const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524'];
 const PANTS = '#33415c';
 const SHOES = '#2b2d42';
 
 /** Vertex-colour markers the shader swaps for per-guest colours. */
 const SHIRT_MARKER = new THREE.Color(1, 1, 1);
 const SKIN_MARKER = new THREE.Color(1, 0, 0);
+/** Staff only: a cap, and a spinning badge over the head so they stand out in a crowd. */
+const CAP_MARKER = new THREE.Color(0, 1, 0);
+const BADGE_MARKER = new THREE.Color(0, 0, 1);
 
 function coloured(geometry: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry {
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
@@ -42,6 +45,9 @@ function guestGeometry(): THREE.BufferGeometry {
     coloured(new THREE.BoxGeometry(0.055, 0.025, 0.08).translate(0.032, 0.0125, 0.01), shoes),
     coloured(new THREE.CylinderGeometry(0.06, 0.07, 0.17, 7).translate(0, 0.25, 0), SHIRT_MARKER),
     coloured(new THREE.IcosahedronGeometry(0.055, 0).translate(0, 0.385, 0), SKIN_MARKER),
+    coloured(new THREE.CylinderGeometry(0.062, 0.062, 0.035, 8).translate(0, 0.43, 0), CAP_MARKER),
+    coloured(new THREE.BoxGeometry(0.05, 0.012, 0.06).translate(0, 0.418, 0.075), CAP_MARKER),
+    coloured(new THREE.OctahedronGeometry(0.1, 0).scale(1, 1.35, 1).translate(0, 0.72, 0), BADGE_MARKER),
   ];
   const merged = mergeGeometries(parts);
   if (!merged) throw new Error('Could not build guest geometry');
@@ -93,6 +99,21 @@ export class GuestLayer {
           '#include <begin_vertex>',
           `vec3 transformed = turn(vec3(position));
           float bob = abs(sin(uTime * 10.0 + aExtra.x)) * 0.025 * aExtra.y;
+          #ifdef USE_COLOR
+          bool staff = aExtra.x > 255.5;
+          bool cap = color.r < 0.01 && color.g > 0.99 && color.b < 0.01;
+          bool badge = color.r < 0.01 && color.g < 0.01 && color.b > 0.99;
+          if (!staff && (cap || badge)) transformed = vec3(0.0, -10.0, 0.0);
+          if (staff) {
+            if (badge) {
+              // Spin the badge on the spot and let it float up and down.
+              float a = uTime * 2.5 + aExtra.x;
+              vec3 p = position - vec3(0.0, 0.72, 0.0);
+              transformed = vec3(cos(a) * p.x + sin(a) * p.z, p.y + 0.72 + sin(uTime * 3.0) * 0.03, -sin(a) * p.x + cos(a) * p.z);
+            }
+            transformed *= 1.15;
+          }
+          #endif
           transformed += aState.xyz + vec3(0.0, bob, 0.0);`,
         )
         .replace(
@@ -102,6 +123,12 @@ export class GuestLayer {
           if (aExtra.x > 255.5 && color.r > 0.99 && color.g > 0.99 && color.b > 0.99) {
             // Staff uniforms: 256 handyman, 257 mechanic.
             vColor.rgb = aExtra.x > 256.5 ? vec3(0.95, 0.45, 0.1) : vec3(0.15, 0.6, 0.3);
+          } else if (aExtra.x > 255.5 && color.g > 0.99 && color.r < 0.01) {
+            // Caps: yellow hard hat for handymen, dark blue for mechanics.
+            vColor.rgb = aExtra.x > 256.5 ? vec3(0.1, 0.2, 0.45) : vec3(1.0, 0.82, 0.2);
+          } else if (aExtra.x > 255.5 && color.b > 0.99 && color.r < 0.01) {
+            // Badge: yellow for handymen, sky blue for mechanics. Over 1.0 marks it as glowing.
+            vColor.rgb = aExtra.x > 256.5 ? vec3(0.0, 0.45, 1.21) : vec3(1.21, 0.75, 0.0);
           } else if (color.r > 0.99 && color.g > 0.99 && color.b > 0.99) {
             vColor.rgb = uShirts[int(mod(aExtra.x, ${SHIRTS.length}.0))];
           } else if (color.r > 0.99 && color.g < 0.01) {
@@ -109,6 +136,14 @@ export class GuestLayer {
           }
           #endif`,
         );
+      // Badges glow a little, so they read in shade and at night.
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        #ifdef USE_COLOR
+        if (max(vColor.r, max(vColor.g, vColor.b)) > 1.2) totalEmissiveRadiance += vColor.rgb * 0.3;
+        #endif`,
+      );
     };
 
     this.mesh = new THREE.Mesh(this.geometry, material);

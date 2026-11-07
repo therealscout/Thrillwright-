@@ -50,7 +50,9 @@ function cornerLock(t: Terrain, cx: number, cy: number): 'unowned' | 'building' 
   for (let ty = cy - 1; ty <= cy; ty++) {
     for (let tx = cx - 1; tx <= cx; tx++) {
       if (tx < 0 || ty < 0 || tx >= t.width || ty >= t.height) continue;
-      if (t.blocked[tileIndex(t, tx, ty)]) lock = 'building';
+      const k = tileIndex(t, tx, ty);
+      // Land under coaster track stays put too, so the track keeps its clearance.
+      if (t.blocked[k] || t.trackHigh[k]) lock = 'building';
       else if (!isOwned(t, tx, ty) && !lock) lock = 'unowned';
     }
   }
@@ -163,6 +165,7 @@ export function moveWater(t: Terrain, tiles: TileCoord[], direction: 1 | -1, bud
     if (value === t.water[k]) continue;
     if (value > 0 && t.paths[k]) return fail('That would flood a path.');
     if (value > 0 && t.blocked[k]) return fail('That would flood a ride or stall.');
+    if (value > 0 && t.trackLow[k] && value >= (t.trackLow[k] as number) - 1) return fail('That would flood the coaster track.');
     changes.push([k, value]);
   }
   if (changes.length === 0) return fail('Nothing to change here.');
@@ -173,12 +176,17 @@ export function moveWater(t: Terrain, tiles: TileCoord[], direction: 1 | -1, bud
 }
 
 /** Lay footpath on every suitable tile of the brush. */
-export function placePath(t: Terrain, tiles: TileCoord[], budget: number): EditResult {
+export function placePath(t: Terrain, tiles: TileCoord[], budget: number, kind: 1 | 2 = 1): EditResult {
   const targets: number[] = [];
   let reason = 'Nothing to change here.';
   for (const { tx, ty } of tiles) {
     const k = tileIndex(t, tx, ty);
-    if (t.paths[k]) continue;
+    if (t.paths[k] === kind) continue;
+    // Turning a path into a queue line (or back) just swaps it.
+    if (t.paths[k]) {
+      targets.push(k);
+      continue;
+    }
     if (!isOwned(t, tx, ty)) reason = "You don't own this land.";
     else if (t.blocked[k]) reason = 'A ride or stall is in the way.';
     else if (isUnderwater(t, tx, ty)) reason = "Paths can't go underwater.";
@@ -188,7 +196,10 @@ export function placePath(t: Terrain, tiles: TileCoord[], budget: number): EditR
   if (targets.length === 0) return fail(reason);
   const cost = targets.length * COSTS.path;
   if (cost > budget) return { ok: false, cost, reason: 'Not enough cash.' };
-  for (const k of targets) t.paths[k] = 1;
+  for (const k of targets) {
+    t.paths[k] = kind;
+    if (kind === 2) t.items[k] = 0; // no bins or benches in a queue
+  }
   return { ok: true, cost };
 }
 
@@ -220,7 +231,7 @@ export function placeItem(t: Terrain, tiles: TileCoord[], item: PathItem, budget
   let reason = 'Bins and benches go on paths.';
   for (const { tx, ty } of tiles) {
     const k = tileIndex(t, tx, ty);
-    if (!t.paths[k] || !isOwned(t, tx, ty)) continue;
+    if (t.paths[k] !== 1 || !isOwned(t, tx, ty)) continue;
     if (t.items[k] === item) {
       reason = 'There is already one here.';
       continue;

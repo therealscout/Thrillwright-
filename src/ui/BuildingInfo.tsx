@@ -1,6 +1,7 @@
 import type { Building } from '../core/buildings';
 import { buildingType } from '../core/catalog';
-import { COASTER_SEATS } from '../core/coaster';
+import { seatsFor } from '../core/coaster-types';
+import { suggestedTicket } from '../core/pricing';
 import type { BuildingStats } from '../sim/sim-core';
 import { count, money, price, rating } from './format';
 
@@ -8,18 +9,24 @@ interface Props {
   building: Building;
   stats: BuildingStats | undefined;
   onPrice(value: number): void;
+  /** How many other buildings share this one's type, and a way to price them all alike. */
+  sameType?: { count: number; differ: boolean };
+  onPriceAll?(): void;
   onToggleOpen(): void;
   onDemolish(): void;
   onClose(): void;
+  /** Coasters: follow the train with the camera. */
+  watching?: boolean;
+  onWatch?(on: boolean): void;
 }
 
-export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolish, onClose }: Props) {
+export function BuildingInfo({ building, stats, onPrice, sameType, onPriceAll, onToggleOpen, onDemolish, onClose, watching, onWatch }: Props) {
   const type = buildingType(building.type);
   const r = building.coaster?.ratings;
   const excitement = r?.excitement ?? type.excitement;
   const intensity = r?.intensity ?? type.intensity;
   const nausea = r?.nausea ?? type.nausea;
-  const capacity = r ? `${COASTER_SEATS} per ${r.duration + 4} s` : `${type.capacity} per ${type.cycle} s`;
+  const capacity = r ? `${seatsFor(building.coaster?.type)} per ${r.duration + 4} s` : `${type.capacity} per ${type.cycle} s`;
   const isRide = type.kind === 'ride';
   const status = stats?.broken
     ? 'Broken down'
@@ -32,6 +39,7 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
           ? 'Loading'
           : 'Waiting for riders'
       : 'Open';
+  const hints = isRide && building.open && stats && !stats.broken ? rideHints(stats, building.price, excitement ?? 0) : [];
   return (
     <aside class="panel info" aria-label={`${type.name} details`} data-testid="building-info">
       <div class="panel-head">
@@ -39,6 +47,20 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
         <button type="button" class="close" onClick={onClose} aria-label="Close">×</button>
       </div>
       <p class={stats?.broken ? 'status-line broken' : 'status-line'}>{status}</p>
+      {hints.length > 0 && (
+        <ul class="ride-hints" data-testid="ride-hints">
+          {hints.map((h) => (
+            <li key={h.text}>
+              {h.text}
+              {h.price !== undefined && (
+                <button type="button" class="link" onClick={() => onPrice(h.price as number)}>
+                  Set {price.format(h.price)}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       <dl>
         {isRide && (
           <>
@@ -53,6 +75,7 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
               </>
             )}
             <dt>In queue</dt><dd data-testid="info-queue">{count.format(stats?.queue ?? 0)}</dd>
+            <dt>Wait</dt><dd>{waitText(stats?.queue ?? 0, r ? seatsFor(building.coaster?.type) : type.capacity ?? 1, r ? r.duration + 4 : type.cycle ?? 30)}</dd>
             <dt>Capacity</dt><dd>{capacity}</dd>
             <dt>Reliability</dt><dd data-testid="info-reliability">{stats?.reliability ?? 100}%</dd>
             <dt>Downtime</dt><dd>{stats?.downtime ?? 0} s</dd>
@@ -69,7 +92,23 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
           <button type="button" onClick={() => onPrice(building.price + 0.5)} aria-label="Raise price">+</button>
         </div>
       )}
+      {type.kind !== 'toilet' && !building.coaster && sameType && sameType.count > 0 && onPriceAll && (
+        <p class="price-all">
+          {sameType.differ ? (
+            <button type="button" class="link" data-testid="price-all" onClick={onPriceAll}>
+              Charge {price.format(building.price)} at all {sameType.count + 1} {plural(type.name)}
+            </button>
+          ) : (
+            <span>All {sameType.count + 1} {plural(type.name)} charge {price.format(building.price)}.</span>
+          )}
+        </p>
+      )}
       <div class="row">
+        {building.coaster && onWatch && (
+          <button type="button" class={watching ? 'primary' : ''} aria-pressed={!!watching} data-testid="watch" onClick={() => onWatch(!watching)}>
+            {watching ? 'Stop watching' : '🎥 Watch'}
+          </button>
+        )}
         <button type="button" onClick={onToggleOpen}>{building.open ? 'Close' : 'Open'}</button>
         <button type="button" class="danger" onClick={onDemolish} title={`Refunds half the build price${building.coaster ? ` (${money.format(Math.round(building.coaster.cost / 2))})` : ''}. Undo with Ctrl+Z.`}>
           Demolish
@@ -77,4 +116,43 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
       </div>
     </aside>
   );
+}
+
+interface Hint {
+  text: string;
+  /** A ticket price to offer as a one-click fix. */
+  price?: number;
+}
+
+/** Plain reasons a ride is quiet, from what guests have been deciding about it. */
+export function rideHints(stats: BuildingStats, ticket: number, excitement: number): Hint[] {
+  const hints: Hint[] = [];
+  if (!stats.reachable) {
+    hints.push({ text: "Guests can't reach the entrance. Join a path to the entrance sign." });
+    return hints;
+  }
+  const r = stats.refused;
+  if (!r) return hints;
+  const fair = suggestedTicket(excitement);
+  if (r.price >= 5 && ticket > fair) {
+    hints.push({ text: `Guests think the ticket is too dear for a ride this exciting. Most will pay ${price.format(fair)}.`, price: fair });
+  }
+  // Some guests always find a coaster too much; only mention it when the ride is quiet.
+  if (r.intense >= 5 && stats.queue < 8) {
+    hints.push({ text: 'Too intense for many guests. Gentler drops, slower turns or fewer loops would bring more riders.' });
+  }
+  if (r.queue >= 5) hints.push({ text: 'The queue is so long that guests are giving up on it.' });
+  return hints;
+}
+
+/** Roughly how long someone joining the back of the queue waits. */
+function waitText(queue: number, perRun: number, cycle: number): string {
+  if (queue === 0) return 'None';
+  const seconds = Math.ceil(queue / Math.max(perRun, 1)) * cycle;
+  return seconds < 60 ? 'Under a minute' : `About ${Math.round(seconds / 60)} min`;
+}
+
+/** "Burger Stand" to "Burger Stands", "Coffee Kiosk" to "Coffee Kiosks". */
+export function plural(name: string): string {
+  return /(s|sh|ch)$/.test(name) ? `${name}es` : `${name}s`;
 }

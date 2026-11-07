@@ -2,6 +2,7 @@
  * Roller coaster designs on the map: where track may go, when a circuit is
  * complete, and which tiles a finished coaster occupies.
  */
+import type { CoasterTypeId } from './coaster-types';
 import type { TileCoord } from './grid';
 import { isUnderwater, tileIndex, tileMaxHeight, tileMinHeight, type Terrain } from './terrain';
 import {
@@ -55,6 +56,8 @@ export interface CoasterRatings {
 
 /** What a finished coaster carries on its Building. */
 export interface CoasterInfo extends CoasterDesign {
+  /** Which kind of coaster (left out in saves from before there were others: steel). */
+  type?: CoasterTypeId;
   /** Which side of the station the entrance is on: -1 left, 1 right. */
   side: -1 | 1;
   ratings: CoasterRatings;
@@ -109,7 +112,15 @@ export function checkPiece(t: Terrain, design: CoasterDesign, state: TrackState,
     if (u.hMax > MAX_TRACK_HEIGHT) return fail('That is as high as track can go.');
     const k = tileIndex(t, u.tx, u.ty);
     if (!t.owned[k]) return fail("You don't own this land.");
-    if (t.blocked[k]) return fail('Something is already built here.');
+    // Another coaster here: pass under or over it with headroom, like track crossing itself.
+    const otherLow = (t.trackLow[k] as number) - 1;
+    const otherHigh = (t.trackHigh[k] as number) - 1;
+    if (t.blocked[k] && otherHigh < 0) return fail('Something is already built here.');
+    if (otherHigh >= 0) {
+      if (kind === 'station') return fail('A station needs open sky above it.');
+      const clear = u.hMin >= otherHigh + TRACK_CLEARANCE || otherLow >= u.hMax + TRACK_CLEARANCE;
+      if (!clear) return fail('The track would hit another coaster.');
+    }
     const ground = tileMaxHeight(t, u.tx, u.ty);
     if (u.hMin < ground) return fail('The track would go into the ground.');
     if (kind === 'station') {
@@ -162,7 +173,7 @@ export function checkEntrance(t: Terrain, design: CoasterDesign, side: -1 | 1): 
   if (t.blocked[k]) return { ok: false, reason: 'Something is in the way of the entrance.', connected: false };
   const onTrack = uniqueTiles(design).some((u) => u.tx === a.tx && u.ty === a.ty);
   if (onTrack && !t.paths[k]) return { ok: false, reason: 'The track is in the way of the entrance.', connected: false };
-  return { ok: true, connected: t.paths[k] === 1 };
+  return { ok: true, connected: (t.paths[k] as number) > 0 };
 }
 
 /** The pieces a station is made of. */

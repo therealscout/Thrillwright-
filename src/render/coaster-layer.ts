@@ -5,10 +5,12 @@
  */
 import * as THREE from 'three';
 import type { Building } from '../core/buildings';
-import { COASTER_CARS, coasterEntrance, endState, type CoasterDesign } from '../core/coaster';
+import { coasterType, type CoasterType, type SupportStyle } from '../core/coaster-types';
+import { coasterEntrance, designTiles, endState, uniqueTiles, type CoasterDesign } from '../core/coaster';
 import { runTest, trainPosition } from '../core/coaster-physics';
 import { HEIGHT_STEP } from '../core/grid';
-import { tileMaxHeight, type Terrain } from '../core/terrain';
+import { SHIRTS, SKINS } from './guest-layer';
+import { tileIndex, tileMaxHeight, type Terrain } from '../core/terrain';
 import { FORWARD, sampleTrack, STATION_LENGTH, type TrackPoint } from '../core/track';
 import type { BuildingStats } from '../sim/sim-core';
 
@@ -19,14 +21,8 @@ const CAR_SPACING = 0.62;
 /** Track is drawn this far above its nominal height so the spine clears the ground. */
 const LIFT = 0.25;
 
-export interface TrackColours {
-  rail: string;
-  spine: string;
-  support: string;
-}
-
-const BUILT: TrackColours = { rail: '#ef476f', spine: '#ffd166', support: '#e9edf2' };
-const DRAFT: TrackColours = { rail: '#ff7aa0', spine: '#ffe39a', support: '#f4f6f8' };
+/** How far above its riders an inverted coaster's track runs. */
+const INVERTED_RAISE = 0.78;
 
 const matCache = new Map<string, THREE.Material>();
 function mat(color: string, ghost = false): THREE.Material {
@@ -93,9 +89,73 @@ function tube(points: readonly TrackPoint[], offRight: number, offUp: number, ra
 const tieGeometry = new THREE.BoxGeometry(GAUGE * 2 + 0.06, 0.035, 0.06);
 const supportGeometry = new THREE.CylinderGeometry(0.05, 0.06, 1, 6).translate(0, 0.5, 0);
 const footGeometry = new THREE.BoxGeometry(0.2, 0.06, 0.2);
+const beamGeometry = new THREE.BoxGeometry(1, 0.07, 0.07);
+const woodLegGeometry = new THREE.BoxGeometry(0.07, 1, 0.07).translate(0, 0.5, 0);
+const woodTieGeometry = new THREE.BoxGeometry(GAUGE * 2 + 0.16, 0.05, 0.08);
+
+/**
+ * Is there something under this point a support column must not stand in:
+ * a path, or another stretch of track lower down? Then the support becomes
+ * a two-legged frame at the tile's corners that straddles it.
+ */
+export type SupportObstacle = (tx: number, ty: number, underY: number) => boolean;
+
+/** Track heights (world units) over each tile, from a set of designs. */
+export function trackEnvelope(designs: ReadonlyArray<CoasterDesign & { type?: string }>): Map<number, Array<[number, number]>> {
+  const map = new Map<number, Array<[number, number]>>();
+  for (const d of designs) {
+    const raise = coasterType(d.type).supports === 'inverted' ? INVERTED_RAISE : 0;
+    for (const uses of designTiles(d)) {
+      for (const u of uses) {
+        const key = u.ty * 4096 + u.tx;
+        let list = map.get(key);
+        if (!list) map.set(key, (list = []));
+        list.push([u.hMin * HEIGHT_STEP, u.hMax * HEIGHT_STEP + LIFT + 0.3 + raise]);
+      }
+    }
+  }
+  return map;
+}
+
+/** Paths, plus any track whose top is below the support's top. */
+export function supportObstacles(terrain: Terrain, envelope: Map<number, Array<[number, number]>>): SupportObstacle {
+  return (tx, ty, underY) => {
+    if (terrain.paths[tileIndex(terrain, tx, ty)]) return true;
+    return (envelope.get(ty * 4096 + tx) ?? []).some(([, top]) => top < underY - 0.05);
+  };
+}
 
 /** Track, ties and supports for a design. */
-export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: TrackColours, ghost = false): { group: THREE.Group; points: TrackPoint[] } {
+/** How a kind of coaster is drawn. */
+export interface TrackStyle {
+  rail: string;
+  spine: string;
+  support: string;
+  tie: string;
+  supports: SupportStyle;
+  /** Track sits this far above the train (inverted coasters hang below it). */
+  raise: number;
+}
+
+export function styleFor(type: CoasterType, tint: 'built' | 'draft' | 'invalid' = 'built'): TrackStyle {
+  const c = type.colours;
+  const base = { supports: type.supports, raise: type.supports === 'inverted' ? INVERTED_RAISE : 0 };
+  if (tint === 'invalid') return { ...base, rail: '#ef476f', spine: '#ef476f', support: '#ef476f', tie: '#ef476f' };
+  if (tint === 'draft') {
+    const light = (hex: string) => `#${new THREE.Color(hex).lerp(new THREE.Color('#ffffff'), 0.3).getHexString()}`;
+    return { ...base, rail: light(c.rail), spine: light(c.spine), support: light(c.support), tie: light(c.tie) };
+  }
+  return { ...base, rail: c.rail, spine: c.spine, support: c.support, tie: c.tie };
+}
+
+/** Track, ties and supports for a design. */
+export function buildTrack(
+  design: CoasterDesign,
+  terrain: Terrain,
+  style: TrackStyle,
+  ghost = false,
+  obstacle: SupportObstacle = () => false,
+): { group: THREE.Group; points: TrackPoint[] } {
   const group = new THREE.Group();
   const points = sampleTrack(design.start, design.pieces);
   if (points.length < 2) return { group, points };
@@ -105,9 +165,12 @@ export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: Tra
     group.add(m);
     return m;
   };
-  add(tube(points, GAUGE, 0.04, RAIL_RADIUS), colours.rail);
-  add(tube(points, -GAUGE, 0.04, RAIL_RADIUS), colours.rail);
-  add(tube(points, 0, -0.1, SPINE_RADIUS), colours.spine);
+  const up = style.raise;
+  const wood = style.supports === 'wood';
+  add(tube(points, GAUGE, 0.04 + up, RAIL_RADIUS), style.rail);
+  add(tube(points, -GAUGE, 0.04 + up, RAIL_RADIUS), style.rail);
+  // Wooden track: a deep timber bed instead of a round steel spine.
+  add(wood ? tube(points, 0, -0.06 + up, 0.12, 4) : tube(points, 0, -0.1 + up, SPINE_RADIUS), style.spine);
 
   const total = (points[points.length - 1] as TrackPoint).s;
   const frame = { p: new THREE.Vector3(), t: new THREE.Vector3(), u: new THREE.Vector3() };
@@ -116,13 +179,26 @@ export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: Tra
   const ties: THREE.Matrix4[] = [];
   const supports: THREE.Matrix4[] = [];
   const feet: THREE.Matrix4[] = [];
-  for (let s = 0.15; s < total; s += 0.32) {
+  const beams: THREE.Matrix4[] = [];
+  const legs: THREE.Matrix4[] = [];
+  for (let s = 0.15; s < total; s += wood ? 0.2 : 0.32) {
     pointAt(points, s, frame);
     r.crossVectors(frame.u, frame.t).normalize();
-    m4.makeBasis(r, frame.u, frame.t).setPosition(frame.p.x - frame.u.x * 0.04, frame.p.y - frame.u.y * 0.04, frame.p.z - frame.u.z * 0.04);
+    const o = up - 0.04;
+    m4.makeBasis(r, frame.u, frame.t).setPosition(frame.p.x + frame.u.x * o, frame.p.y + frame.u.y * o, frame.p.z + frame.u.z * o);
     ties.push(m4.clone());
   }
-  // Support columns about every tile, from under the spine to the ground.
+  const beam = (x0: number, z0: number, x1: number, z1: number, y: number) => {
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.atan2(dz, dx));
+    beams.push(new THREE.Matrix4().compose(new THREE.Vector3((x0 + x1) / 2, y, (z0 + z1) / 2), q, new THREE.Vector3(Math.hypot(dx, dz), 1, 1)));
+  };
+  const column = (x: number, z: number, ground: number, top: number) => {
+    supports.push(new THREE.Matrix4().compose(new THREE.Vector3(x, ground, z), new THREE.Quaternion(), new THREE.Vector3(1, top - ground, 1)));
+    feet.push(new THREE.Matrix4().makeTranslation(x, ground + 0.03, z));
+  };
+  // Supports about every tile, from under the track to the ground.
   for (let s = 0.5; s < total; s += 1) {
     pointAt(points, s, frame);
     const tx = Math.floor(frame.p.x);
@@ -130,11 +206,44 @@ export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: Tra
     if (tx < 0 || ty < 0 || tx >= terrain.width || ty >= terrain.height) continue;
     const ground = tileMaxHeight(terrain, tx, ty) * HEIGHT_STEP;
     // Hang from the lowest part of the track here (the bottom of a loop is lower than its top).
-    const under = frame.u.y > 0 ? frame.p.y - 0.17 : frame.p.y + 0.17 * frame.u.y;
+    const under = frame.u.y > 0 ? frame.p.y + up * frame.u.y - 0.17 : frame.p.y + up * frame.u.y + 0.17 * frame.u.y;
     const height = under - ground;
     if (height < 0.12 || frame.u.y < -0.2) continue;
-    supports.push(new THREE.Matrix4().compose(new THREE.Vector3(frame.p.x, ground, frame.p.z), new THREE.Quaternion(), new THREE.Vector3(1, height, 1)));
-    feet.push(new THREE.Matrix4().makeTranslation(frame.p.x, ground + 0.03, frame.p.z));
+    if (style.supports === 'inverted') {
+      // A column beside the track with an arm over the top: the train hangs clear below.
+      r.crossVectors(frame.u, frame.t).setY(0);
+      if (r.lengthSq() < 1e-6) continue;
+      r.normalize();
+      const top = frame.p.y + up * frame.u.y + 0.16;
+      const cx = frame.p.x + r.x * 0.62;
+      const cz = frame.p.z + r.z * 0.62;
+      column(cx, cz, ground, top);
+      beam(cx, cz, frame.p.x, frame.p.z, top);
+      continue;
+    }
+    if (obstacle(tx, ty, under)) {
+      // Straddle the path or lower track: legs at two opposite corners, the
+      // pair lying most across the track, joined by a beam under it.
+      const across = Math.abs(frame.t.x + frame.t.z) < Math.abs(frame.t.x - frame.t.z);
+      const a = across ? [tx + 0.05, ty + 0.05] : [tx + 0.95, ty + 0.05];
+      const b = across ? [tx + 0.95, ty + 0.95] : [tx + 0.05, ty + 0.95];
+      for (const [x, z] of [a, b] as Array<[number, number]>) column(x, z, ground, under);
+      beam(a[0] as number, a[1] as number, b[0] as number, b[1] as number, under);
+      continue;
+    }
+    if (wood) {
+      // A timber trestle: two legs across the track, braced every half unit of height.
+      r.crossVectors(frame.u, frame.t).setY(0);
+      if (r.lengthSq() < 1e-6) continue;
+      r.normalize().multiplyScalar(0.34);
+      for (const side of [-1, 1]) {
+        legs.push(new THREE.Matrix4().compose(new THREE.Vector3(frame.p.x + r.x * side, ground, frame.p.z + r.z * side), new THREE.Quaternion(), new THREE.Vector3(1, height, 1)));
+      }
+      for (let y = ground + 0.5; y < under - 0.1; y += 0.5) beam(frame.p.x - r.x, frame.p.z - r.z, frame.p.x + r.x, frame.p.z + r.z, y);
+      beam(frame.p.x - r.x, frame.p.z - r.z, frame.p.x + r.x, frame.p.z + r.z, under);
+      continue;
+    }
+    column(frame.p.x, frame.p.z, ground, under);
   }
   const instanced = (geometry: THREE.BufferGeometry, color: string, list: THREE.Matrix4[]) => {
     if (!list.length) return;
@@ -143,14 +252,16 @@ export function buildTrack(design: CoasterDesign, terrain: Terrain, colours: Tra
     im.castShadow = !ghost;
     group.add(im);
   };
-  instanced(tieGeometry, '#3d4654', ties);
-  instanced(supportGeometry, colours.support, supports);
+  instanced(wood ? woodTieGeometry : tieGeometry, style.tie, ties);
+  instanced(supportGeometry, style.support, supports);
+  instanced(woodLegGeometry, style.support, legs);
   instanced(footGeometry, '#9aa3ad', feet);
+  instanced(beamGeometry, style.support, beams);
   return { group, points };
 }
 
 /** A covered platform alongside the station pieces. */
-function buildStation(design: CoasterDesign, side: -1 | 1, terrain: Terrain): THREE.Group {
+function buildStation(design: CoasterDesign, side: -1 | 1, terrain: Terrain, raise = 0): THREE.Group {
   const g = new THREE.Group();
   const { start } = design;
   const F = FORWARD[start.dir] as readonly [number, number];
@@ -172,10 +283,11 @@ function buildStation(design: CoasterDesign, side: -1 | 1, terrain: Terrain): TH
   box(len - 0.05, 0.16, 0.9, '#cfc3b4', 0, y + 0.08, 0);
   // Roof on four posts.
   for (const px of [-len / 2 + 0.15, len / 2 - 0.15]) {
-    for (const pz of [-0.45, 0.45]) box(0.07, 1.2, 0.07, '#5c6b7a', px, y + 0.6, pz);
+    for (const pz of [-0.45, 0.45]) box(0.07, 1.2 + raise, 0.07, '#5c6b7a', px, y + (1.2 + raise) / 2, pz);
   }
-  box(len + 0.1, 0.08, 1.15, '#118ab2', 0, y + 1.24, 0);
-  box(len + 0.1, 0.1, 0.12, '#ffd166', 0, y + 1.17, 0.55 * side);
+  // A taller roof over an inverted coaster's raised track.
+  box(len + 0.1, 0.08, 1.15, '#118ab2', 0, y + 1.24 + raise, 0);
+  box(len + 0.1, 0.1, 0.12, '#ffd166', 0, y + 1.17 + raise, 0.55 * side);
   // Entrance sign on the access tile.
   const a = coasterEntrance(design, side);
   if (a.tx >= 0 && a.ty >= 0 && a.tx < terrain.width && a.ty < terrain.height) {
@@ -195,27 +307,100 @@ function buildStation(design: CoasterDesign, side: -1 | 1, terrain: Terrain): TH
   return g;
 }
 
-/** One coaster car: a low body with two rows of seats, facing +z. */
-function buildCar(color: string, lead: boolean): THREE.Group {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.16, 0.54), mat(color));
-  body.position.y = 0.16;
-  body.castShadow = true;
-  g.add(body);
-  for (const z of [-0.12, 0.14]) {
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.06), mat('#2b2d42'));
-    seat.position.set(0, 0.3, z - 0.08);
-    g.add(seat);
-    for (const x of [-0.1, 0.1]) {
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), mat('#f1c27d'));
-      head.position.set(x, 0.38, z);
-      head.name = 'rider';
-      g.add(head);
+/** A seated rider: body, head and two arms that go up on the big moments. */
+interface Rider {
+  group: THREE.Group;
+  shirt: THREE.Mesh;
+  skin: THREE.Mesh[];
+  arms: THREE.Group[];
+  look: number;
+}
+
+const torsoGeometry = new THREE.BoxGeometry(0.11, 0.13, 0.08);
+const headGeometry = new THREE.IcosahedronGeometry(0.058, 0);
+const armGeometry = new THREE.BoxGeometry(0.035, 0.12, 0.035).translate(0, 0.06, 0);
+
+const legGeometry = new THREE.BoxGeometry(0.04, 0.16, 0.04).translate(0, -0.08, 0);
+
+function buildRider(legs = false): Rider {
+  const group = new THREE.Group();
+  group.name = 'rider';
+  const shirt = new THREE.Mesh(torsoGeometry, mat(SHIRTS[0] as string));
+  shirt.position.y = 0.075;
+  shirt.castShadow = true;
+  const head = new THREE.Mesh(headGeometry, mat(SKINS[0] as string));
+  head.position.y = 0.2;
+  group.add(shirt, head);
+  const skin: THREE.Mesh[] = [head];
+  const arms: THREE.Group[] = [];
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.07, 0.12, 0);
+    const arm = new THREE.Mesh(armGeometry, mat(SKINS[0] as string));
+    pivot.add(arm);
+    pivot.rotation.x = Math.PI * 0.85; // resting: hands down on the lap bar
+    group.add(pivot);
+    skin.push(arm);
+    arms.push(pivot);
+  }
+  if (legs) {
+    // Feet dangling below an inverted coaster's seat.
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(legGeometry, mat('#33415c'));
+      leg.position.set(side * 0.03, 0.01, 0.04);
+      group.add(leg);
     }
   }
-  if (lead) {
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.12), mat('#ffd166'));
-    nose.position.set(0, 0.15, 0.32);
+  group.visible = false;
+  return { group, shirt, skin, arms, look: -1 };
+}
+
+/** Colour a rider like the guest sitting there (same palettes as the crowd). */
+function dressRider(r: Rider, look: number): void {
+  if (r.look === look) return;
+  r.look = look;
+  r.shirt.material = mat(SHIRTS[look % SHIRTS.length] as string);
+  const skin = mat(SKINS[Math.floor(look / SHIRTS.length) % SKINS.length] as string);
+  for (const m of r.skin) m.material = skin;
+}
+
+/** One coaster car: two rows of two seats, facing +z. Inverted cars hang from a frame. */
+function buildCar(type: CoasterType, index: number, riders: Rider[]): THREE.Group {
+  const g = new THREE.Group();
+  const color = type.colours.cars[index % 2] as string;
+  const lead = index === 0;
+  const hanging = type.supports === 'inverted';
+  if (hanging) {
+    // A roof bar up to the track, and open seats with legs dangling.
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.06, 0.56), mat(color));
+    roof.position.y = 0.5;
+    const hanger = new THREE.Mesh(new THREE.BoxGeometry(0.08, INVERTED_RAISE - 0.15, 0.08), mat('#2b2d42'));
+    hanger.position.y = 0.5 + (INVERTED_RAISE - 0.15) / 2;
+    roof.castShadow = true;
+    g.add(roof, hanger);
+  } else {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.16, 0.56), mat(color));
+    body.position.y = 0.16;
+    body.castShadow = true;
+    g.add(body);
+  }
+  for (const z of [-0.13, 0.14]) {
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.16, 0.05), mat('#2b2d42'));
+    back.position.set(0, 0.3, z - 0.1);
+    g.add(back);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.03, 0.03), mat('#ffd166'));
+    bar.position.set(0, 0.33, z + 0.09);
+    g.add(bar);
+    for (const x of [-0.1, 0.1]) {
+      const r = buildRider(hanging);
+      r.group.position.set(x, 0.24, z);
+      g.add(r.group);
+      riders.push(r);
+    }
+  }
+  if (lead && !hanging) {
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.12), mat(type.colours.trim));
+    nose.position.set(0, 0.15, 0.33);
     g.add(nose);
   }
   return g;
@@ -224,12 +409,19 @@ function buildCar(color: string, lead: boolean): THREE.Group {
 interface Entry {
   building: Building;
   group: THREE.Group;
+  /** Track, supports and station: rebuilt when what's under the track changes. */
+  track: THREE.Group;
+  /** What the supports were last fitted around. */
+  signature: string;
   points: TrackPoint[];
   timeline: Float32Array;
   duration: number;
   cycle: number;
   train: THREE.Group[];
-  riders: THREE.Object3D[];
+  /** Seats in boarding order: front car first. */
+  riders: Rider[];
+  /** How far each car's riders have their arms up, 0..1. */
+  cheer: number[];
   time: number;
   stationS: number;
 }
@@ -240,18 +432,31 @@ export class CoasterLayer {
   private draft: { key: string; group: THREE.Group } | null = null;
   private readonly frame = { p: new THREE.Vector3(), t: new THREE.Vector3(), u: new THREE.Vector3() };
 
+  /** Every built coaster's track heights, for fitting supports around. */
+  private envelope = new Map<number, Array<[number, number]>>();
+
   sync(buildings: readonly Building[], terrain: Terrain): void {
     const seen = new Set<number>();
+    this.envelope = trackEnvelope(buildings.flatMap((b) => (b.coaster ? [b.coaster] : [])));
+    const obstacle = supportObstacles(terrain, this.envelope);
     for (const b of buildings) {
       if (!b.coaster) continue;
       seen.add(b.id);
       const existing = this.entries.get(b.id);
       if (existing && existing.building.coaster === b.coaster) {
         existing.building = b;
+        // Paths laid or track built underneath: refit the supports.
+        const signature = this.signature(b.coaster, terrain);
+        if (signature !== existing.signature) {
+          existing.group.remove(existing.track);
+          existing.track = this.buildTrackGroup(b, terrain, obstacle);
+          existing.group.add(existing.track);
+          existing.signature = signature;
+        }
         continue;
       }
       if (existing) this.group.remove(existing.group);
-      this.entries.set(b.id, this.create(b, terrain));
+      this.entries.set(b.id, this.create(b, terrain, obstacle));
     }
     for (const [id, e] of this.entries) {
       if (seen.has(id)) continue;
@@ -276,19 +481,26 @@ export class CoasterLayer {
         else e.time += (target - e.time) * Math.min(1, dt * 2);
       }
       const head = running ? trainPosition(e.timeline, Math.min(e.time, e.duration)) : e.stationS;
-      for (const r of e.riders) r.visible = running ? (s as BuildingStats).riders > 0 : (s?.queue ?? 0) > 0;
-      this.placeTrain(e, head);
+      const looks = running ? (s as BuildingStats).looks ?? [] : [];
+      const count = running ? Math.min((s as BuildingStats).riders, e.riders.length) : 0;
+      e.riders.forEach((r, i) => {
+        r.group.visible = i < count;
+        if (i < count) dressRider(r, looks[i] ?? i * 7);
+      });
+      this.placeTrain(e, head, dt);
     }
   }
 
   /** Show the design being edited (or a station about to be placed), or null to hide it. */
-  setDraft(design: CoasterDesign | null, terrain: Terrain, valid = true, version = 0): void {
-    const key = design ? `${version}:${valid}:${design.start.tx},${design.start.ty},${design.start.dir},${design.pieces.length}` : '';
+  setDraft(design: CoasterDesign | null, terrain: Terrain, valid = true, version = 0, typeId?: string): void {
+    const key = design ? `${typeId}:${version}:${valid}:${design.start.tx},${design.start.ty},${design.start.dir},${design.pieces.length}` : '';
     if (this.draft?.key === key) return;
     if (this.draft) this.group.remove(this.draft.group);
     this.draft = null;
     if (!design) return;
-    const { group } = buildTrack(design, terrain, valid ? DRAFT : { rail: '#ef476f', spine: '#ef476f', support: '#ef476f' }, true);
+    const envelope = new Map(this.envelope);
+    for (const [k, v] of trackEnvelope([{ ...design, type: typeId }])) envelope.set(k, [...(envelope.get(k) ?? []), ...v]);
+    const { group } = buildTrack(design, terrain, styleFor(coasterType(typeId), valid ? 'draft' : 'invalid'), true, supportObstacles(terrain, envelope));
     // An arrow where the next piece goes.
     if (design.pieces.length) {
       const end = endState(design);
@@ -302,28 +514,48 @@ export class CoasterLayer {
     this.group.add(group);
   }
 
-  private create(b: Building, terrain: Terrain): Entry {
+  /** Paths, ground and other track under a coaster's tiles, as a string to compare. */
+  private signature(design: CoasterDesign, terrain: Terrain): string {
+    const parts: string[] = [];
+    for (const { tx, ty } of uniqueTiles(design)) {
+      if (tx < 0 || ty < 0 || tx >= terrain.width || ty >= terrain.height) continue;
+      const env = this.envelope.get(ty * 4096 + tx) ?? [];
+      parts.push(`${terrain.paths[tileIndex(terrain, tx, ty)]}${tileMaxHeight(terrain, tx, ty)}.${env.length}`);
+    }
+    return parts.join(',');
+  }
+
+  private buildTrackGroup(b: Building, terrain: Terrain, obstacle: SupportObstacle): THREE.Group {
     const info = b.coaster as NonNullable<Building['coaster']>;
-    const { group, points } = buildTrack(info, terrain, BUILT);
-    group.add(buildStation(info, info.side, terrain));
+    const { group } = buildTrack(info, terrain, styleFor(coasterType(info.type)), false, obstacle);
+    group.add(buildStation(info, info.side, terrain, styleFor(coasterType(info.type)).raise));
+    return group;
+  }
+
+  private create(b: Building, terrain: Terrain, obstacle: SupportObstacle): Entry {
+    const info = b.coaster as NonNullable<Building['coaster']>;
+    const group = new THREE.Group();
+    const track = this.buildTrackGroup(b, terrain, obstacle);
+    group.add(track);
+    const points = sampleTrack(info.start, info.pieces);
     const run = runTest(info);
     const train: THREE.Group[] = [];
-    const riders: THREE.Object3D[] = [];
-    for (let i = 0; i < COASTER_CARS; i++) {
-      const car = buildCar(i % 2 ? '#118ab2' : '#ef476f', i === 0);
-      car.traverse((o) => { if (o.name === 'rider') riders.push(o); });
+    const riders: Rider[] = [];
+    const type = coasterType(info.type);
+    for (let i = 0; i < type.cars; i++) {
+      const car = buildCar(type, i, riders);
       train.push(car);
       group.add(car);
     }
     this.group.add(group);
     const stationS = run.timeline[0] ?? 0;
     const duration = run.timeline.length ? (run.timeline.length - 1) * 0.1 : 0;
-    const entry: Entry = { building: b, group, points, timeline: run.timeline, duration, cycle: info.ratings.duration + 4, train, riders, time: 0, stationS };
+    const entry: Entry = { building: b, group, track, signature: this.signature(info, terrain), points, timeline: run.timeline, duration, cycle: info.ratings.duration + 4, train, riders, cheer: train.map(() => 0), time: 0, stationS };
     this.placeTrain(entry, stationS);
     return entry;
   }
 
-  private placeTrain(e: Entry, head: number): void {
+  private placeTrain(e: Entry, head: number, dt = 0): void {
     if (e.points.length < 2) return;
     const f = this.frame;
     const r = new THREE.Vector3();
@@ -334,6 +566,27 @@ export class CoasterLayer {
       m.makeBasis(r, f.u, f.t);
       car.quaternion.setFromRotationMatrix(m);
       car.position.copy(f.p);
+      // Hands up going down a steep drop or upside down in a loop.
+      const thrill = f.t.y < -0.45 || f.u.y < 0.2;
+      const goal = thrill ? 1 : 0;
+      const c = (e.cheer[i] = (e.cheer[i] as number) + (goal - (e.cheer[i] as number)) * Math.min(1, dt * 6));
+      for (let k = i * 4; k < i * 4 + 4; k++) {
+        const rider = e.riders[k];
+        if (!rider?.group.visible) continue;
+        // Rest on the lap bar (forward and down) or reach straight up.
+        const lean = Math.PI * 0.85 * (1 - c) + 0.15 * c;
+        const sway = c * Math.sin(head * 3 + k) * 0.25;
+        (rider.arms[0] as THREE.Group).rotation.set(lean, 0, sway + c * 0.2);
+        (rider.arms[1] as THREE.Group).rotation.set(lean, 0, -sway - c * 0.2);
+      }
     });
+  }
+
+  /** Where the front of a coaster's train is now, or null (for the follow camera). */
+  trainPosition(id: number, out: THREE.Vector3): THREE.Vector3 | null {
+    const e = this.entries.get(id);
+    const car = e?.train[0];
+    if (!car) return null;
+    return out.copy(car.position);
   }
 }

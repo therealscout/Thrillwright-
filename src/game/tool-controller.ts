@@ -2,6 +2,7 @@
  * Connects pointer input to park edits: which tool is active, the brush
  * size, drag strokes, undo/redo and feedback messages.
  */
+import { isCoasterType, type CoasterTypeId } from '../core/coaster-types';
 import { accessTile, buildingAt, checkPlacement, footprint, originFor, type Facing } from '../core/buildings';
 import { buildingType } from '../core/catalog';
 import type { TileCoord } from '../core/grid';
@@ -29,12 +30,13 @@ export const TOOLS: ToolInfo[] = [
   { id: 'water-up', label: 'Add water', hint: 'Click to raise the water level; dig first for a lake', key: '3', paints: false, usesBrush: true },
   { id: 'water-down', label: 'Drain water', hint: 'Click to lower the water level', key: '4', paints: false, usesBrush: true },
   { id: 'path', label: 'Path', hint: 'Click and drag to lay footpath', key: '5', paints: true, usesBrush: true },
+  { id: 'queue', label: 'Queue', hint: "Drag from a ride's entrance to a path. Guests wait in line here", key: 'l', paints: true, usesBrush: false },
   { id: 'remove-path', label: 'Remove path', hint: 'Click and drag to remove footpath', key: '6', paints: true, usesBrush: true },
   { id: 'buy-land', label: 'Buy land', hint: 'Click and drag to buy land next to your park', key: '7', paints: true, usesBrush: true },
   { id: 'bin', label: 'Bin', hint: 'Click a path to put a litter bin on it', key: '8', paints: true, usesBrush: false },
   { id: 'bench', label: 'Bench', hint: 'Click a path to put a bench on it; tired guests rest here', key: '9', paints: true, usesBrush: false },
   { id: 'build', label: 'Build', hint: 'Click to place. R rotates the entrance; face it onto a path', key: 'b', paints: false, usesBrush: false },
-  { id: 'coaster', label: 'Coaster builder', hint: 'Click flat land for the station. R turns it', key: 'c', paints: false, usesBrush: false },
+  { id: 'coaster', label: 'Coasters', hint: 'Click flat land for the station. R turns it', key: 'c', paints: false, usesBrush: false },
 ];
 
 export const BRUSH_SIZES = [1, 3, 5, 7] as const;
@@ -134,9 +136,9 @@ export class ToolController {
   }
 
   /** Open the coaster builder (or go back to it). */
-  startCoaster(): void {
+  startCoaster(type?: CoasterTypeId): void {
     if (!this.coaster) return;
-    this.coaster.begin();
+    this.coaster.begin(type);
     this.tool = 'coaster';
     this.refreshBrush();
     this.emit();
@@ -152,7 +154,7 @@ export class ToolController {
       return;
     }
     if (buildingType(type).custom) {
-      this.startCoaster();
+      this.startCoaster(isCoasterType(type) ? type : undefined);
       return;
     }
     this.buildType = type;
@@ -199,9 +201,15 @@ export class ToolController {
       this.place(tile);
     } else if (kind === 'down' && tile && this.tool === 'coaster') {
       if (this.coaster?.state.phase === 'station') {
+        const premade = this.coaster.state.template;
         const r = this.coaster.placeStation(tile);
         if (!r.ok && r.reason) this.say(r.reason);
-        else if (r.ok) this.say('Station placed. Now lay track from its far end.', 'info');
+        else if (r.ok && premade) {
+          const built = this.park.buildings.at(-1);
+          this.say(`Your coaster is open${r.connected === false ? '. Join its entrance to a path so guests can reach it' : ''}.`, 'info');
+          this.setTool('inspect');
+          if (built) this.select(built.id);
+        } else if (r.ok) this.say('Station placed. Now lay track from its far end.', 'info');
       } else {
         this.select(buildingAt(this.park.buildings, tile)?.id ?? null);
       }

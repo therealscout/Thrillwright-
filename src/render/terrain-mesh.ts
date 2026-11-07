@@ -32,9 +32,12 @@ function cornerPoints(tx: number, ty: number, h: Corners, lift = 0): Array<[numb
  * Two triangles per tile. The split runs along the diagonal whose corners
  * match, so ridges and valleys look right.
  */
+function tileOrder(h: Corners): number[] {
+  return h[1] === h[3] && h[0] !== h[2] ? [0, 3, 1, 1, 3, 2] : [0, 3, 2, 0, 2, 1];
+}
+
 function pushTile(out: number[], p: Array<[number, number, number]>, h: Corners): void {
-  const order = h[1] === h[3] && h[0] !== h[2] ? [0, 3, 1, 1, 3, 2] : [0, 3, 2, 0, 2, 1];
-  for (const i of order) out.push(...(p[i] as [number, number, number]));
+  for (const i of tileOrder(h)) out.push(...(p[i] as [number, number, number]));
 }
 
 function pushColor(out: number[], color: THREE.Color, vertices: number): void {
@@ -46,17 +49,25 @@ export function buildTerrainGeometry(t: Terrain): THREE.BufferGeometry {
   const positions: number[] = [];
   const colors: number[] = [];
   const color = new THREE.Color();
+  const unowned = new THREE.Color(palette.unowned);
   for (let ty = 0; ty < t.height; ty++) {
     for (let tx = 0; tx < t.width; tx++) {
       const k = tileIndex(t, tx, ty);
       const h = tileCorners(t, tx, ty);
       pushTile(positions, cornerPoints(tx, ty, h), h);
       const surface = t.surfaces[k];
-      const underwater = (t.water[k] as number) > Math.min(...h);
-      const base = underwater ? palette.lakeBed : surface === Surface.Sand ? palette.sand : surface === Surface.Dirt ? palette.dirt : palette.grass;
-      color.set(base).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.04);
-      if (!t.owned[k]) color.lerp(new THREE.Color(palette.unowned), 0.35);
-      pushColor(colors, color, 6);
+      const water = t.water[k] as number;
+      const base = surface === Surface.Sand ? palette.sand : surface === Surface.Dirt ? palette.dirt : palette.grass;
+      // Each corner below the water line takes the lake-bed colour, so the bank shades into the water.
+      const corner = h.map((c) => {
+        color.set(water > c ? palette.lakeBed : base).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.04);
+        if (!t.owned[k]) color.lerp(unowned, 0.35);
+        return color.clone();
+      });
+      for (const i of tileOrder(h)) {
+        const c = corner[i] as THREE.Color;
+        colors.push(c.r, c.g, c.b);
+      }
     }
   }
 
@@ -107,34 +118,21 @@ export function buildGridGeometry(t: Terrain): THREE.BufferGeometry {
   return geometry;
 }
 
-export function buildWaterGeometry(t: Terrain): THREE.BufferGeometry {
-  const positions: number[] = [];
-  for (let ty = 0; ty < t.height; ty++) {
-    for (let tx = 0; tx < t.width; tx++) {
-      const w = t.water[tileIndex(t, tx, ty)] as number;
-      if (w === 0) continue;
-      const h: Corners = [w, w, w, w];
-      pushTile(positions, cornerPoints(tx, ty, h, -0.06), h);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 /** Path tiles: a slab that follows the ground, with a darker kerb where it meets grass. */
 export function buildPathGeometry(t: Terrain): THREE.BufferGeometry {
   const positions: number[] = [];
   const colors: number[] = [];
   const top = new THREE.Color();
   const kerb = new THREE.Color(palette.pathEdge);
-  const isPath = (x: number, y: number) =>
-    x >= 0 && y >= 0 && x < t.width && y < t.height && t.paths[tileIndex(t, x, y)] === 1;
+  const kindAt = (x: number, y: number) => (x >= 0 && y >= 0 && x < t.width && y < t.height ? (t.paths[tileIndex(t, x, y)] as number) : 0);
+  const queueTop = new THREE.Color(palette.queue);
   const inset = 0.08;
   for (let ty = 0; ty < t.height; ty++) {
     for (let tx = 0; tx < t.width; tx++) {
-      if (!isPath(tx, ty)) continue;
+      const kind = kindAt(tx, ty);
+      if (!kind) continue;
+      // Paving joins neighbours of the same kind: queue lines read as their own lanes.
+      const isPath = (x: number, y: number) => kindAt(x, y) === kind;
       const h = tileCorners(t, tx, ty);
       // Kerb: the full tile, slightly lifted.
       pushTile(positions, cornerPoints(tx, ty, h, 0.03), h);
@@ -154,7 +152,8 @@ export function buildPathGeometry(t: Terrain): THREE.BufferGeometry {
       };
       const p = [at(x0, z0), at(x1, z0), at(x1, z1), at(x0, z1)];
       pushTile(positions, p, h);
-      top.set(palette.path).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.03);
+      if (kind === 2) top.copy(queueTop).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.03);
+      else top.set(palette.path).offsetHSL(0, 0, (tileNoise(tx, ty) - 0.5) * 0.03);
       pushColor(colors, top, 6);
     }
   }

@@ -1,3 +1,4 @@
+import { coasterType } from '../core/coaster-types';
 import type { BuilderState, CoasterEditor } from '../game/coaster-editor';
 import { STATION_LENGTH } from '../core/track';
 import { money, rating } from './format';
@@ -23,17 +24,61 @@ export function CoasterBuilder({ editor, state, onPlaceStation, onMessage }: Pro
   return (
     <aside class="panel coaster-builder" aria-label="Coaster builder" data-testid="coaster-builder">
       <div class="panel-head">
-        <h2>Coaster builder</h2>
+        <h2>{coasterType(state.type).name}</h2>
         <button type="button" class="close" onClick={() => editor.cancel()} aria-label="Cancel and refund" title="Cancel and refund">×</button>
       </div>
 
       {state.phase === 'station' && (
         <>
-          <p class="note">
-            Click flat, owned land to place the three-tile station. <kbd>R</kbd> turns it (now heading {DIRS[state.stationDir]}).
-          </p>
+          <div class="segmented" role="group" aria-label="How to build">
+            <button type="button" class={state.template ? '' : 'active'} aria-pressed={!state.template} onClick={() => report(editor.choosePremade(null))}>
+              Design your own
+            </button>
+            <button
+              type="button"
+              class={state.template ? 'active' : ''}
+              aria-pressed={!!state.template}
+              data-testid="premade-tab"
+              onClick={() => report(editor.choosePremade(state.premades.find((p) => !p.locked)?.id ?? null))}
+            >
+              Ready-made
+            </button>
+          </div>
+          {state.template ? (
+            <>
+              <ul class="premade-list" role="listbox" aria-label="Ready-made designs">
+                {state.premades.map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={state.template === p.id}
+                      class={state.template === p.id ? 'premade active' : 'premade'}
+                      data-premade={p.id}
+                      disabled={p.locked}
+                      onClick={() => report(editor.choosePremade(p.id))}
+                    >
+                      <span class="premade-name">
+                        {p.locked && <span aria-hidden="true">🔒 </span>}
+                        {p.name}
+                      </span>
+                      <span class="item-cost">{money.format(p.price)}</span>
+                      <span class="item-stats">{p.locked ? 'Research the loop first.' : p.blurb}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p class="note">
+                Click the map to drop it there and open it. <kbd>R</kbd> turns it (now heading {DIRS[state.stationDir]}).
+              </p>
+            </>
+          ) : (
+            <p class="note">
+              Click flat, owned land to place the three-tile station. <kbd>R</kbd> turns it (now heading {DIRS[state.stationDir]}).
+            </p>
+          )}
           <div class="row">
-            <button type="button" onClick={onPlaceStation}>Place station</button>
+            <button type="button" onClick={onPlaceStation}>{state.template ? 'Place it' : 'Place station'}</button>
             <button type="button" onClick={() => editor.cancel()}>Cancel</button>
           </div>
         </>
