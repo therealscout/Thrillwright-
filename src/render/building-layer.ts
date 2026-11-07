@@ -8,7 +8,7 @@ import { buildingType } from '../core/catalog';
 import { HEIGHT_STEP } from '../core/grid';
 import { cornerHeight, type Terrain } from '../core/terrain';
 import type { BuildingStats } from '../sim/sim-core';
-import { createModel, facingRotation, type BuildingModel } from './building-models';
+import { createModel, facingRotation, setModelGlow, type BuildingModel } from './building-models';
 
 interface Entry {
   building: Building;
@@ -21,6 +21,11 @@ export class BuildingLayer {
   private readonly entries = new Map<number, Entry>();
   private ghost: { type: string; model: BuildingModel } | null = null;
   private readonly ghostMaterial = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false });
+
+  /** Rides and stalls glow after dark (0 by day .. 1 at night). */
+  setNight(night: number): void {
+    setModelGlow(Math.max(0, night - 0.3) / 0.7);
+  }
 
   /** Add, move or remove models to match the park's buildings. */
   sync(buildings: readonly Building[], terrain: Terrain): void {

@@ -422,3 +422,11 @@ button.link { background: none; border: none; height: auto; padding: 4px 0; colo
 }
 .topbar .speed { display: flex; gap: 2px; }
 .topbar .speed button { min-width: 30px; height: 28px; padding: 0 6px; font-size: 12px; }
+
+/* ---- Options, weather (milestone 9) ----------------------------------------- */
+.topbar .weather { font-size: 16px; min-width: 20px; text-align: center; }
+.panel .check { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
+.panel .slider { display: grid; grid-template-columns: 1fr 120px 40px; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+.panel .slider .value { text-align: right; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
+.panel input[type='range'] { accent-color: var(--ui-accent); width: 100%; }
+.panel input[type='checkbox'] { accent-color: var(--ui-accent); }

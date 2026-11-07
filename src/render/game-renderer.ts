@@ -19,6 +19,7 @@ import { CoasterLayer } from './coaster-layer';
 import { PathLayer } from './path-layer';
 import type { CoasterDesign } from '../core/coaster';
 import { GuestLayer } from './guest-layer';
+import { Atmosphere, skyState, type SkyInput, type SkyState } from './atmosphere';
 import { palette } from './palette';
 import {
   buildBrushGeometry,
@@ -90,6 +91,10 @@ export class GameRenderer {
   private leftDown = false;
   private builtVersion = -1;
   private frames = 0;
+  private atmosphere!: Atmosphere;
+  private skySource: (() => SkyInput) | null = null;
+  private lastSky: SkyState | null = null;
+  private lastSkyKey = '';
   private fpsTime = 0;
   private fps = 0;
   private lastTime = performance.now();
@@ -307,7 +312,8 @@ export class GameRenderer {
   }
 
   private addLights(): void {
-    this.scene.add(new THREE.HemisphereLight(palette.skyLight, palette.groundLight, 1.1));
+    const hemi = new THREE.HemisphereLight(palette.skyLight, palette.groundLight, 1.1);
+    this.scene.add(hemi);
     const sun = new THREE.DirectionalLight(palette.sun, 2.2);
     const { width, height } = this.park.terrain;
     const span = Math.max(width, height);
@@ -325,6 +331,31 @@ export class GameRenderer {
     sun.shadow.bias = -0.0005;
     sun.shadow.normalBias = 0.02;
     this.scene.add(sun, sun.target);
+    const centre = new THREE.Vector3(width / 2, 0, height / 2);
+    this.atmosphere = new Atmosphere(this.scene, hemi, sun, centre, span * 0.9);
+  }
+
+  /** Where the time of day and the weather come from (default: a clear noon). */
+  setSkySource(source: () => SkyInput): void {
+    this.skySource = source;
+  }
+
+  /** How dark it is right now, 0 by day to 1 at night. */
+  get night(): number {
+    return this.lastSky?.night ?? 0;
+  }
+
+  private updateSky(dt: number): void {
+    const input = this.skySource?.() ?? { time: 0.5, cloud: 0, rain: 0 };
+    // Light only needs recomputing when the sky has visibly changed.
+    const key = `${input.time.toFixed(3)}|${input.cloud.toFixed(2)}|${input.rain.toFixed(2)}`;
+    if (key !== this.lastSkyKey) {
+      this.lastSkyKey = key;
+      this.lastSky = skyState(input);
+      this.atmosphere.apply(this.lastSky, input.rain);
+      this.buildingLayer.setNight(this.lastSky.night);
+    }
+    this.atmosphere.update(dt, this.target);
   }
 
   // ---- input -------------------------------------------------------------
@@ -481,6 +512,7 @@ export class GameRenderer {
     } else {
       this.coasterLayer.setDraft(draft?.design ?? null, this.park.terrain, true, draft?.version ?? 0);
     }
+    this.updateSky(dt);
     this.renderer.render(this.scene, this.camera);
 
     this.frames++;

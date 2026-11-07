@@ -17,9 +17,22 @@ function mat(color: string): THREE.MeshLambertMaterial {
   let m = mats.get(color);
   if (!m) {
     m = new THREE.MeshLambertMaterial({ color, flatShading: true });
+    m.emissive.copy(m.color).multiplyScalar(0.45 * glow);
     mats.set(color, m);
   }
   return m;
+}
+
+let glow = 0;
+
+/**
+ * Light the rides and stalls up after dark: every model colour gets a little
+ * of itself back as emitted light, so they stand out against the night.
+ */
+export function setModelGlow(amount: number): void {
+  if (Math.abs(amount - glow) < 0.01) return;
+  glow = amount;
+  for (const m of mats.values()) m.emissive.copy(m.color).multiplyScalar(0.45 * amount);
 }
 
 function mesh(geometry: THREE.BufferGeometry, color: string, x = 0, y = 0, z = 0): THREE.Mesh {

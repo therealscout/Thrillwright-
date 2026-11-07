@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { COSTS } from '../core/costs';
 import type { BuilderState, CoasterEditor } from '../game/coaster-editor';
+import type { AudioEngine } from '../audio/audio-engine';
 import type { GoalTracker, Outcome } from '../game/goals';
 import type { Management } from '../game/management';
 import type { Scenario } from '../game/scenarios';
+import { WEATHER_NAMES, type Weather, type WeatherKind } from '../game/weather';
 import type { Park } from '../game/park';
 import { BRUSH_SIZES, TOOLS, type ToolController, type ToolState } from '../game/tool-controller';
 import type { GameRenderer, RendererStats } from '../render/game-renderer';
@@ -16,6 +18,7 @@ import { count, money } from './format';
 import { ManageIcon, StaffIcon, ToolIcon } from './icons';
 import { GoalPanel, OutcomeDialog } from './GoalPanel';
 import { ManagePanel } from './ManagePanel';
+import { OptionsPanel, type DisplayControl } from './OptionsPanel';
 import { ScenarioSelect } from './ScenarioSelect';
 import { TutorialCard } from './TutorialCard';
 import { ParkPanel } from './ParkPanel';
@@ -24,6 +27,7 @@ import { GuestInfo } from './GuestInfo';
 import { buildingType } from '../core/catalog';
 
 const VIEW_NAMES = ['North-east', 'South-east', 'South-west', 'North-west'];
+const WEATHER_ICON: Record<WeatherKind, string> = { sunny: '☀', cloudy: '☁', rain: '🌧' };
 const FACING = ['north', 'east', 'south', 'west'];
 
 const TOOL_COST: Partial<Record<ToolState['tool'], string>> = {
@@ -53,6 +57,9 @@ interface AppProps {
   /** The scenario being played, or null to show the scenario list. */
   scenario: Scenario | null;
   goals: GoalTracker;
+  weather: Weather;
+  audio: AudioEngine;
+  display: DisplayControl;
   onPlay(id: string): void;
   dev: DevActions;
   showHelp?: boolean;
@@ -60,7 +67,7 @@ interface AppProps {
   showPerf?: boolean;
 }
 
-export function App({ game, park, tools, coaster, sim, management, scenario, goals, onPlay, dev, showHelp: helpAtStart = true, showPerf: perfAtStart = false }: AppProps) {
+export function App({ game, park, tools, coaster, sim, management, scenario, goals, weather, audio, display, onPlay, dev, showHelp: helpAtStart = true, showPerf: perfAtStart = false }: AppProps) {
   const [stats, setStats] = useState<RendererStats | null>(null);
   const [tool, setTool] = useState<ToolState>(tools.state);
   const [simStats, setSimStats] = useState<SimStats>(sim.stats);
@@ -72,6 +79,8 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
   const [showStaff, setShowStaff] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [showGoal, setShowGoal] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [sky, setSky] = useState<WeatherKind>(weather.kind);
   const [outcome, setOutcome] = useState<Outcome>('playing');
   const [showMenu, setShowMenu] = useState(scenario === null);
   /** Panels opened at least once, for the tutorial. */
@@ -91,6 +100,7 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
   useEffect(() => park.onChange(() => setVersion(park.version)), [park]);
   useEffect(() => management.onChange(() => setManageVersion((v) => v + 1)), [management]);
   useEffect(() => goals.onOutcome(setOutcome), [goals]);
+  useEffect(() => weather.onChange(setSky), [weather]);
 
   // Pause and game speed.
   const [paused, setPausedState] = useState(sim.paused);
@@ -175,6 +185,9 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
             </button>
           ))}
         </div>
+        <span class="weather" data-testid="weather" title={`Weather: ${WEATHER_NAMES[sky]}`} aria-label={`Weather: ${WEATHER_NAMES[sky]}`}>
+          {sky === 'sunny' && game.night > 0.6 ? '🌙' : WEATHER_ICON[sky]}
+        </span>
         {scenario && (
           <button type="button" class="guests goal-chip" data-testid="goal" title="Scenario goal" onClick={() => setShowGoal((v) => !v)}>
             {goals.outcome === 'won' ? '🏆 Goal reached' : goals.lines.length ? `◎ Goal ${goals.lines.filter((l) => l.met).length}/${goals.lines.length}` : '◎ Sandbox'}
@@ -194,6 +207,9 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
         <button type="button" onClick={() => game.zoomBy(1.25)} title="Zoom in (+)">＋</button>
         <button type="button" onClick={() => game.zoomBy(0.8)} title="Zoom out (−)">－</button>
         <button type="button" onClick={() => setShowPerf((v) => !v)} title="Performance test" aria-pressed={showPerf}>⚡</button>
+        <button type="button" onClick={() => setShowOptions((v) => !v)} title="Sound and display options" aria-pressed={showOptions} data-testid="options">
+          ⚙
+        </button>
         <button type="button" onClick={() => setShowHelp((v) => !v)} title="Controls">?</button>
       </div>
 
@@ -258,6 +274,7 @@ export function App({ game, park, tools, coaster, sim, management, scenario, goa
             onClose={() => setShowStaff(false)}
           />
         )}
+        {showOptions && <OptionsPanel audio={audio} display={display} onClose={() => setShowOptions(false)} />}
         {showManage && (
           <ManagePanel management={management} buildings={park.buildings} cash={tool.cash} onClose={() => setShowManage(false)} />
         )}
