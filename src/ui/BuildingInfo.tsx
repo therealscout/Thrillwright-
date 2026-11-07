@@ -75,7 +75,7 @@ export function BuildingInfo({ building, stats, onPrice, sameType, onPriceAll, o
                 <dt>Inversions</dt><dd>{r.inversions}</dd>
               </>
             )}
-            <dt>In queue</dt><dd data-testid="info-queue">{count.format(stats?.queue ?? 0)}</dd>
+            <dt>In queue</dt><dd><span data-testid="info-queue">{count.format(stats?.queue ?? 0)}</span>{stats?.room ? ` of ${count.format(stats.room)}` : ""}</dd>
             <dt>Wait</dt><dd>{waitText(stats?.queue ?? 0, r ? seatsFor(building.coaster?.type) : type.capacity ?? 1, r ? r.duration + 4 : type.cycle ?? 30)}</dd>
             <dt>Capacity</dt><dd>{capacity}</dd>
             <dt>Reliability</dt><dd data-testid="info-reliability">{stats?.reliability ?? 100}%</dd>

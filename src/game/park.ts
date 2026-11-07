@@ -8,7 +8,7 @@ import { checkDesign, checkEntrance, type CoasterInfo } from '../core/coaster';
 import { STARTING_CASH, WAGES } from '../core/costs';
 import { suggestedTicket } from '../core/pricing';
 import type { TileCoord } from '../core/grid';
-import { cloneTerrain, PathItem, restoreTerrain, type Terrain } from '../core/terrain';
+import { cloneTerrain, PathItem, restoreTerrain, tileIndex, type Terrain } from '../core/terrain';
 import { buyLand, moveLand, moveWater, placeItem, placePath, removePath, type EditResult } from '../core/terrain-edit';
 
 export type ToolId =
@@ -145,7 +145,11 @@ export class Park {
   }
 
   /** Start a drag. All edits until endStroke() undo as one step. */
+  /** The last queue tile laid in this stroke, so the next one carries the line on. */
+  private queueEnd = -1;
+
   beginStroke(): void {
+    this.queueEnd = -1;
     this.strokeStart = this.snapshot();
     this.strokeSpent = 0;
     this.strokeChanged = false;
@@ -168,7 +172,18 @@ export class Park {
       case 'water-up': result = moveWater(t, tiles, 1, this.cash); break;
       case 'water-down': result = moveWater(t, tiles, -1, this.cash); break;
       case 'path': result = placePath(t, tiles, this.cash); break;
-      case 'queue': result = placePath(t, tiles, this.cash, 2); break;
+      case 'queue': {
+        // Dragging over a queue tile that's already there carries the line on from it.
+        const only = tiles.length === 1 ? tileIndex(t, (tiles[0] as TileCoord).tx, (tiles[0] as TileCoord).ty) : -1;
+        if (only >= 0 && t.paths[only] === 2) {
+          this.queueEnd = only;
+          return { ok: false, cost: 0 };
+        }
+        const r = placePath(t, tiles, this.cash, 2, this.queueEnd);
+        if (r.last !== undefined) this.queueEnd = r.last;
+        result = r;
+        break;
+      }
       case 'remove-path': result = removePath(t, tiles); break;
       case 'buy-land': result = buyLand(t, tiles, this.cash); break;
       case 'bin': result = placeItem(t, tiles, PathItem.Bin, this.cash); break;

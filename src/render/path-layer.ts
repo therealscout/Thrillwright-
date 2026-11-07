@@ -124,7 +124,7 @@ export class PathLayer {
     this.syncQueueRails(t);
   }
 
-  /** Railings along queue lines, open where they meet a path or the ride. */
+  /** Railings along queue lines, open where they meet a path or the ride, and between joined tiles. */
   private syncQueueRails(t: Terrain): void {
     const rails: THREE.Matrix4[] = [];
     const posts: THREE.Matrix4[] = [];
@@ -139,7 +139,11 @@ export class PathLayer {
           const nx = tx + dx, ny = ty + dy;
           const inside = nx >= 0 && ny >= 0 && nx < t.width && ny < t.height;
           const n = inside ? tileIndex(t, nx, ny) : -1;
-          if (n >= 0 && (t.paths[n] || t.blocked[n])) continue;
+          const links = t.queueLinks[tileIndex(t, tx, ty)] as number;
+          if (n >= 0 && t.blocked[n]) continue;
+          // Open to the queue tiles it joins, and to a path only at the ends of the line.
+          if (n >= 0 && t.paths[n] === 2 && (links >> s) & 1) continue;
+          if (n >= 0 && t.paths[n] === 1 && bitCount(links) < 2) continue;
           // A rail along this edge, just inside the tile.
           const cx = tx + 0.5 + dx * 0.44;
           const cz = ty + 0.5 + dy * 0.44;
@@ -187,4 +191,8 @@ export class PathLayer {
     this.litter.set(bits, colours);
     this.vomit.set(blobs);
   }
+}
+
+function bitCount(v: number): number {
+  return (v & 1) + ((v >> 1) & 1) + ((v >> 2) & 1) + ((v >> 3) & 1);
 }

@@ -7,6 +7,7 @@ export interface WorldData {
   corners: Uint8Array;
   paths: Uint8Array;
   items: Uint8Array;
+  queueLinks?: Uint8Array;
   buildings: SimBuilding[];
 }
 

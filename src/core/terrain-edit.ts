@@ -8,6 +8,7 @@ import {
   MAX_HEIGHT,
   MIN_HEIGHT,
   PathItem,
+  QUEUE_LINK,
   cornerIndex,
   isPathable,
   isUnderwater,
@@ -175,8 +176,76 @@ export function moveWater(t: Terrain, tiles: TileCoord[], direction: 1 | -1, bud
   return { ok: true, cost };
 }
 
+// ---- queue links ---------------------------------------------------------------
+
+const STEPS: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+const isQueue = (t: Terrain, k: number) => t.paths[k] === 2;
+const linkCount = (t: Terrain, k: number) => {
+  const v = t.queueLinks[k] as number;
+  return (v & 1) + ((v >> 1) & 1) + ((v >> 2) & 1) + ((v >> 3) & 1);
+};
+
+/** Which side of tile a tile b is on (0..3), or -1 if they don't touch. */
+function sideOf(t: Terrain, a: number, b: number): number {
+  const ax = a % t.width;
+  const ay = (a - ax) / t.width;
+  const bx = b % t.width;
+  const by = (b - bx) / t.width;
+  return STEPS.findIndex(([dx, dy]) => ax + dx === bx && ay + dy === by);
+}
+
+function link(t: Terrain, a: number, b: number): boolean {
+  const side = sideOf(t, a, b);
+  if (side < 0 || !isQueue(t, a) || !isQueue(t, b)) return false;
+  t.queueLinks[a] = (t.queueLinks[a] as number) | (QUEUE_LINK[side] as number);
+  t.queueLinks[b] = (t.queueLinks[b] as number) | (QUEUE_LINK[(side + 2) % 4] as number);
+  return true;
+}
+
+/** Cut a tile's queue links, on both sides of each. */
+function unlink(t: Terrain, k: number): void {
+  const x = k % t.width;
+  const y = (k - x) / t.width;
+  STEPS.forEach(([dx, dy], side) => {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= t.width || ny >= t.height) return;
+    const n = tileIndex(t, nx, ny);
+    t.queueLinks[n] = (t.queueLinks[n] as number) & ~(QUEUE_LINK[(side + 2) % 4] as number);
+  });
+  t.queueLinks[k] = 0;
+}
+
+/** A new queue tile with nothing to follow joins the open end of a queue next to it. */
+function autoLink(t: Terrain, k: number): void {
+  const x = k % t.width;
+  const y = (k - x) / t.width;
+  const ends: number[] = [];
+  for (const [dx, dy] of STEPS) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= t.width || ny >= t.height) continue;
+    const n = tileIndex(t, nx, ny);
+    if (isQueue(t, n) && linkCount(t, n) < 2) ends.push(n);
+  }
+  // Prefer the end of a line (one link) over a lone tile.
+  ends.sort((a, b) => linkCount(t, b) - linkCount(t, a));
+  for (const n of ends.slice(0, 2)) link(t, k, n);
+}
+
+/** Older saves had no links: join every pair of touching queue tiles, as they used to work. */
+export function linkAllQueues(t: Terrain): void {
+  t.queueLinks.fill(0);
+  for (let k = 0; k < t.paths.length; k++) {
+    if (!isQueue(t, k)) continue;
+    const x = k % t.width;
+    if (x + 1 < t.width) link(t, k, k + 1);
+    if (k + t.width < t.paths.length) link(t, k, k + t.width);
+  }
+}
+
 /** Lay footpath on every suitable tile of the brush. */
-export function placePath(t: Terrain, tiles: TileCoord[], budget: number, kind: 1 | 2 = 1): EditResult {
+export function placePath(t: Terrain, tiles: TileCoord[], budget: number, kind: 1 | 2 = 1, after = -1): EditResult & { last?: number } {
   const targets: number[] = [];
   let reason = 'Nothing to change here.';
   for (const { tx, ty } of tiles) {
@@ -196,11 +265,17 @@ export function placePath(t: Terrain, tiles: TileCoord[], budget: number, kind: 
   if (targets.length === 0) return fail(reason);
   const cost = targets.length * COSTS.path;
   if (cost > budget) return { ok: false, cost, reason: 'Not enough cash.' };
+  // A queue tile joins the one laid just before it, so a dragged line becomes one lane.
+  let prev = after;
   for (const k of targets) {
+    unlink(t, k);
     t.paths[k] = kind;
-    if (kind === 2) t.items[k] = 0; // no bins or benches in a queue
+    if (kind !== 2) continue;
+    t.items[k] = 0; // no bins or benches in a queue
+    if (!(prev >= 0 && linkCount(t, prev) < 2 && link(t, prev, k))) autoLink(t, k);
+    prev = k;
   }
-  return { ok: true, cost };
+  return { ok: true, cost, last: kind === 2 ? prev : undefined };
 }
 
 export function removePath(t: Terrain, tiles: TileCoord[]): EditResult {
@@ -208,6 +283,7 @@ export function removePath(t: Terrain, tiles: TileCoord[]): EditResult {
   for (const { tx, ty } of tiles) {
     const k = tileIndex(t, tx, ty);
     if (t.paths[k] && isOwned(t, tx, ty)) {
+      unlink(t, k);
       t.paths[k] = 0;
       t.items[k] = PathItem.None;
       removed++;

@@ -43,7 +43,16 @@ export interface Terrain {
    */
   readonly trackLow: Uint8Array;
   readonly trackHigh: Uint8Array;
+  /**
+   * Which neighbours each queue tile joins, as bits N=1, E=2, S=4, W=8. Queue
+   * tiles side by side stay separate lanes unless they were laid one after
+   * the other, so a queue can snake back and forth with no gap.
+   */
+  readonly queueLinks: Uint8Array;
 }
+
+/** Link bits for N, E, S, W (the same order as the neighbour offsets). */
+export const QUEUE_LINK = [1, 2, 4, 8] as const;
 
 /** Things that stand on a path tile. */
 export const PathItem = {
@@ -68,6 +77,7 @@ export function createTerrain(width: number, height: number): Terrain {
     items: new Uint8Array(tiles),
     trackLow: new Uint8Array(tiles),
     trackHigh: new Uint8Array(tiles),
+    queueLinks: new Uint8Array(tiles),
   };
 }
 
@@ -141,6 +151,7 @@ export function cloneTerrain(t: Terrain): Terrain {
     items: t.items.slice(),
     trackLow: t.trackLow.slice(),
     trackHigh: t.trackHigh.slice(),
+    queueLinks: t.queueLinks.slice(),
   };
 }
 
@@ -155,4 +166,5 @@ export function restoreTerrain(target: Terrain, source: Terrain): void {
   target.items.set(source.items);
   target.trackLow.set(source.trackLow);
   target.trackHigh.set(source.trackHigh);
+  target.queueLinks.set(source.queueLinks);
 }

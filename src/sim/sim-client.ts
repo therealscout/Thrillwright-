@@ -163,7 +163,7 @@ export class SimClient {
         satisfies: type.satisfies ?? 0,
       };
     });
-    return { width: t.width, height: t.height, corners: t.corners.slice(), paths, items: t.items.slice(), buildings };
+    return { width: t.width, height: t.height, corners: t.corners.slice(), paths, items: t.items.slice(), queueLinks: t.queueLinks.slice(), buildings };
   }
 
   private receive(msg: FromWorker): void {
