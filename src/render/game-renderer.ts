@@ -78,7 +78,7 @@ export class GameRenderer {
   private readonly coasterLayer = new CoasterLayer();
   private readonly pathLayer = new PathLayer();
   private dirtSource: (() => { litter: Uint8Array; vomit: Uint8Array; version: number } | null) | null = null;
-  private draftSource: (() => { design: CoasterDesign | null; version: number }) | null = null;
+  private draftSource: (() => { design: CoasterDesign | null; version: number; type?: string }) | null = null;
   private trackGhost: { design: CoasterDesign; valid: boolean } | null = null;
   private guestSource: (() => GuestSnapshot | null) | null = null;
   private buildingStatsSource: (() => readonly BuildingStats[]) | null = null;
@@ -218,7 +218,7 @@ export class GameRenderer {
   }
 
   /** Where to read the coaster design being edited from each frame. */
-  setDraftSource(source: () => { design: CoasterDesign | null; version: number }): void {
+  setDraftSource(source: () => { design: CoasterDesign | null; version: number; type?: string }): void {
     this.draftSource = source;
   }
 
@@ -581,9 +581,10 @@ export class GameRenderer {
     const draft = this.draftSource?.();
     if (this.trackGhost) {
       const g = this.trackGhost.design.start;
-      this.coasterLayer.setDraft(this.trackGhost.design, this.park.terrain, this.trackGhost.valid, g.tx * 1000 + g.ty);
+      // Include the design's length so switching ready-made designs redraws the ghost.
+      this.coasterLayer.setDraft(this.trackGhost.design, this.park.terrain, this.trackGhost.valid, g.tx * 1000 + g.ty, draft?.type);
     } else {
-      this.coasterLayer.setDraft(draft?.design ?? null, this.park.terrain, true, draft?.version ?? 0);
+      this.coasterLayer.setDraft(draft?.design ?? null, this.park.terrain, true, draft?.version ?? 0, draft?.type);
     }
     this.updateSky(dt);
     this.renderer.render(this.scene, this.camera);

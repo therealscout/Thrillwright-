@@ -1,6 +1,6 @@
 import type { Building } from '../core/buildings';
 import { buildingType } from '../core/catalog';
-import { COASTER_SEATS } from '../core/coaster';
+import { seatsFor } from '../core/coaster-types';
 import { suggestedTicket } from '../core/pricing';
 import type { BuildingStats } from '../sim/sim-core';
 import { count, money, price, rating } from './format';
@@ -23,7 +23,7 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
   const excitement = r?.excitement ?? type.excitement;
   const intensity = r?.intensity ?? type.intensity;
   const nausea = r?.nausea ?? type.nausea;
-  const capacity = r ? `${COASTER_SEATS} per ${r.duration + 4} s` : `${type.capacity} per ${type.cycle} s`;
+  const capacity = r ? `${seatsFor(building.coaster?.type)} per ${r.duration + 4} s` : `${type.capacity} per ${type.cycle} s`;
   const isRide = type.kind === 'ride';
   const status = stats?.broken
     ? 'Broken down'

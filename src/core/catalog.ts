@@ -61,6 +61,22 @@ export const CATALOG: BuildingType[] = [
     description: 'Design your own track: lift hills, drops, turns and loops. Priced per piece.',
   },
   {
+    id: 'junior-coaster', name: 'Little Dipper', kind: 'ride', size: 1, cost: 0, price: 3, custom: true,
+    description: 'A small, gentle coaster with tight little turns. Good for everyone.',
+  },
+  {
+    id: 'wild-mouse', name: 'Zippy Mouse', kind: 'ride', size: 1, cost: 0, price: 4, custom: true,
+    description: 'Small cars whip round hairpin turns that feel far too tight.',
+  },
+  {
+    id: 'wooden-coaster', name: 'Timber Twister', kind: 'ride', size: 1, cost: 0, price: 5, custom: true,
+    description: 'A rattling wooden classic with big hills and lots of airtime. No loops.',
+  },
+  {
+    id: 'inverted-coaster', name: 'Skyhanger', kind: 'ride', size: 1, cost: 0, price: 6, custom: true,
+    description: 'Riders hang below the track with their feet in the air. Loops allowed.',
+  },
+  {
     id: 'burger-stand', name: 'Burger Stand', kind: 'food', size: 1, cost: 300, price: 3,
     description: 'Hearty food for hungry guests.', satisfies: 150,
   },

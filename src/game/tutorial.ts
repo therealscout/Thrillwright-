@@ -57,7 +57,7 @@ export const TUTORIAL: TutorialStep[] = [
     title: 'Build a ride',
     text: 'Open Rides & stalls and place a Carousel beside your path. Turn its entrance with R so it faces the path.',
     hint: 'Rides & stalls (B) · R to turn the entrance',
-    done: (c) => has(c.park, (kind, type) => kind === 'ride' && type !== 'steel-coaster'),
+    done: (c) => has(c.park, (kind, type) => kind === 'ride' && !buildingType(type).custom),
   },
   {
     id: 'riders',

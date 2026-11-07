@@ -4,7 +4,7 @@
  */
 import { accessTile } from '../core/buildings';
 import { buildingType } from '../core/catalog';
-import { COASTER_SEATS } from '../core/coaster';
+import { seatsFor } from '../core/coaster-types';
 import { tileIndex } from '../core/terrain';
 import type { Park } from '../game/park';
 import type { FromWorker, ToWorker, WorldData } from './protocol';
@@ -144,7 +144,7 @@ export class SimClient {
           id: b.id, kind: type.kind, type: b.type, ax: a.tx, ay: a.ty, price: b.price, open: b.open,
           excitement: r.excitement, intensity: r.intensity, nausea: r.nausea,
           // The train's run plus a few seconds to unload in the station.
-          capacity: COASTER_SEATS, cycle: r.duration + 4, satisfies: 0,
+          capacity: seatsFor(b.coaster?.type), cycle: r.duration + 4, satisfies: 0,
         };
       }
       return {

@@ -445,3 +445,9 @@ button.link { background: none; border: none; height: auto; padding: 4px 0; colo
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 .panel.options { max-height: calc(100vh - 190px); overflow-y: auto; }
 .panel .segmented { margin-bottom: 4px; }
+
+/* Ready-made coasters in the builder */
+.premade-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.premade { width: 100%; height: auto; padding: 8px 10px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; }
+.premade.active { background: rgba(255, 209, 102, 0.2); border-color: var(--ui-accent); }
+.premade-name { font-weight: 600; }

@@ -2,6 +2,7 @@
  * Connects pointer input to park edits: which tool is active, the brush
  * size, drag strokes, undo/redo and feedback messages.
  */
+import { isCoasterType, type CoasterTypeId } from '../core/coaster-types';
 import { accessTile, buildingAt, checkPlacement, footprint, originFor, type Facing } from '../core/buildings';
 import { buildingType } from '../core/catalog';
 import type { TileCoord } from '../core/grid';
@@ -134,9 +135,9 @@ export class ToolController {
   }
 
   /** Open the coaster builder (or go back to it). */
-  startCoaster(): void {
+  startCoaster(type?: CoasterTypeId): void {
     if (!this.coaster) return;
-    this.coaster.begin();
+    this.coaster.begin(type);
     this.tool = 'coaster';
     this.refreshBrush();
     this.emit();
@@ -152,7 +153,7 @@ export class ToolController {
       return;
     }
     if (buildingType(type).custom) {
-      this.startCoaster();
+      this.startCoaster(isCoasterType(type) ? type : undefined);
       return;
     }
     this.buildType = type;
@@ -199,9 +200,15 @@ export class ToolController {
       this.place(tile);
     } else if (kind === 'down' && tile && this.tool === 'coaster') {
       if (this.coaster?.state.phase === 'station') {
+        const premade = this.coaster.state.template;
         const r = this.coaster.placeStation(tile);
         if (!r.ok && r.reason) this.say(r.reason);
-        else if (r.ok) this.say('Station placed. Now lay track from its far end.', 'info');
+        else if (r.ok && premade) {
+          const built = this.park.buildings.at(-1);
+          this.say(`Your coaster is open${r.connected === false ? '. Join its entrance to a path so guests can reach it' : ''}.`, 'info');
+          this.setTool('inspect');
+          if (built) this.select(built.id);
+        } else if (r.ok) this.say('Station placed. Now lay track from its far end.', 'info');
       } else {
         this.select(buildingAt(this.park.buildings, tile)?.id ?? null);
       }

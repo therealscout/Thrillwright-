@@ -2,6 +2,7 @@
  * Roller coaster designs on the map: where track may go, when a circuit is
  * complete, and which tiles a finished coaster occupies.
  */
+import type { CoasterTypeId } from './coaster-types';
 import type { TileCoord } from './grid';
 import { isUnderwater, tileIndex, tileMaxHeight, tileMinHeight, type Terrain } from './terrain';
 import {
@@ -55,6 +56,8 @@ export interface CoasterRatings {
 
 /** What a finished coaster carries on its Building. */
 export interface CoasterInfo extends CoasterDesign {
+  /** Which kind of coaster (left out in saves from before there were others: steel). */
+  type?: CoasterTypeId;
   /** Which side of the station the entrance is on: -1 left, 1 right. */
   side: -1 | 1;
   ratings: CoasterRatings;

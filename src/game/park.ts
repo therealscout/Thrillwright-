@@ -240,7 +240,7 @@ export class Park {
     this.beginStroke();
     const building: Building = {
       id: this.nextBuildingId++,
-      type: 'steel-coaster',
+      type: info.type ?? 'steel-coaster',
       x: info.start.tx,
       y: info.start.ty,
       facing: info.start.dir,
