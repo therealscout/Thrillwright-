@@ -56,6 +56,7 @@ export function OptionsPanel({ audio, display, onClose }: Props) {
           <span class="value">{Math.round(sound[s.key] * 100)}%</span>
         </label>
       ))}
+      {audio.started && <p class="note" data-testid="now-playing">Now playing: {audio.tuneName}</p>}
       <h3>Display</h3>
       <label class="check">
         <input type="checkbox" checked={look.dayNight} onChange={(e) => setDisplay({ dayNight: (e.target as HTMLInputElement).checked })} data-testid="day-night" />
