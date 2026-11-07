@@ -69,6 +69,18 @@ export class Park {
     return result;
   }
 
+  /**
+   * Change the terrain directly, free of charge, as one undo step. Used by
+   * developer tools such as the performance test grid.
+   */
+  applyFree(mutate: (terrain: Terrain) => void): void {
+    this.beginStroke();
+    mutate(this.terrain);
+    this.strokeChanged = true;
+    this.endStroke();
+    this.changed();
+  }
+
   /** Apply one edit as its own undo step. */
   applyOnce(tool: ToolId, tiles: TileCoord[]): EditResult {
     this.beginStroke();

@@ -3,6 +3,9 @@ import { expect, test } from '@playwright/test';
 test('game loads, renders and responds to camera controls', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
 
   await page.goto('/');
   await expect(page.getByText('Thrillwright', { exact: true })).toBeVisible();
@@ -35,4 +38,21 @@ test('building a path costs money and can be undone', async ({ page }) => {
 
   await page.keyboard.press('Control+z');
   await expect(cash).toHaveText('$20,000');
+});
+
+test('guests arrive at the entrance', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('guests')).not.toHaveText('0 guests', { timeout: 10_000 });
+});
+
+test('performance test fills the park with thousands of guests', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  await page.goto('/?bench=5000');
+  await expect(page.getByTestId('perf-guests')).toHaveText('5,000', { timeout: 15_000 });
+  // The worker reports its own tick time; it must stay far below the 50 ms budget.
+  await expect(page.getByTestId('perf-tick')).toHaveText(/^\d\.\d\d ms per tick$/);
+  expect(errors).toEqual([]);
 });

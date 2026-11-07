@@ -117,6 +117,33 @@ button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px;
   max-width: 100%;
 }
 
+.guests {
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
+  padding-left: 12px;
+  border-left: 1px solid var(--ui-border);
+}
+
+.panel {
+  position: absolute;
+  right: 12px;
+  top: 64px;
+  width: 260px;
+  padding: 14px 16px;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+}
+.panel h2 { margin: 0 0 8px; font-size: 15px; }
+.panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; }
+.panel dt { color: var(--ui-muted); }
+.panel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.panel .row { display: flex; gap: 6px; margin-bottom: 6px; }
+.panel .row button { flex: 1; font-size: 12px; }
+.panel .note { margin: 6px 0 0; color: var(--ui-muted); font-size: 12px; }
+
 .tool {
   display: flex;
   flex-direction: column;
@@ -173,8 +200,8 @@ button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px;
 
 .help {
   position: absolute;
-  right: 12px;
-  top: 64px;
+  left: 12px;
+  top: 108px;
   width: 260px;
   padding: 14px 16px;
   background: var(--ui-bg);
@@ -200,7 +227,34 @@ kbd {
 
 @media (max-width: 900px) {
   .tool-label { display: none; }
-  .tool { min-width: 44px; height: 44px; }
+  .guests {
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
+  padding-left: 12px;
+  border-left: 1px solid var(--ui-border);
+}
+
+.panel {
+  position: absolute;
+  right: 12px;
+  top: 64px;
+  width: 260px;
+  padding: 14px 16px;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+}
+.panel h2 { margin: 0 0 8px; font-size: 15px; }
+.panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; }
+.panel dt { color: var(--ui-muted); }
+.panel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.panel .row { display: flex; gap: 6px; margin-bottom: 6px; }
+.panel .row button { flex: 1; font-size: 12px; }
+.panel .note { margin: 6px 0 0; color: var(--ui-muted); font-size: 12px; }
+
+.tool { min-width: 44px; height: 44px; }
   .status { display: none; }
 }
 

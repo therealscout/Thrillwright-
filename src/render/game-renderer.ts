@@ -11,6 +11,8 @@ import {
 } from '../core/grid';
 import { tileIndex, tileNoise, type Terrain } from '../core/terrain';
 import type { Park } from '../game/park';
+import type { GuestSnapshot } from '../sim/sim-client';
+import { GuestLayer } from './guest-layer';
 import { palette } from './palette';
 import {
   buildBrushGeometry,
@@ -60,6 +62,8 @@ export class GameRenderer {
   private readonly crowns: THREE.InstancedMesh;
   private readonly treeSpots: Array<[number, number, number]>;
   private readonly gate: THREE.Group;
+  private readonly guests = new GuestLayer();
+  private guestSource: (() => GuestSnapshot | null) | null = null;
 
   private rotation: Rotation = 0;
   private yaw = rotationYaw(0);
@@ -144,6 +148,7 @@ export class GameRenderer {
     this.gate = this.buildGate();
     this.gate.position.set(entrance.tx, 0, entrance.ty + 0.5);
     this.scene.add(this.gate);
+    this.scene.add(this.guests.mesh);
 
     this.bindInput();
     this.resize();
@@ -160,6 +165,11 @@ export class GameRenderer {
   onTilePointer(listener: (e: TilePointerEvent) => void): () => void {
     this.tileListeners.add(listener);
     return () => this.tileListeners.delete(listener);
+  }
+
+  /** Where to read guest positions from each frame (the simulation client). */
+  setGuestSource(source: () => GuestSnapshot | null): void {
+    this.guestSource = source;
   }
 
   rotate(direction: 1 | -1): void {
@@ -412,6 +422,7 @@ export class GameRenderer {
       }
     }
 
+    this.guests.update(this.guestSource?.() ?? null, now);
     this.renderer.render(this.scene, this.camera);
 
     this.frames++;

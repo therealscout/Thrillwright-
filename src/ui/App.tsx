@@ -2,10 +2,13 @@ import { useEffect, useState } from 'preact/hooks';
 import { COSTS } from '../core/costs';
 import { BRUSH_SIZES, TOOLS, type ToolController, type ToolState } from '../game/tool-controller';
 import type { GameRenderer, RendererStats } from '../render/game-renderer';
+import type { SimClient } from '../sim/sim-client';
+import type { SimStats } from '../sim/sim-core';
 import { ToolIcon } from './icons';
 
 const VIEW_NAMES = ['North-east', 'South-east', 'South-west', 'North-west'];
 
+const count = new Intl.NumberFormat('en-US');
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
 const TOOL_COST: Partial<Record<ToolState['tool'], string>> = {
@@ -17,14 +20,31 @@ const TOOL_COST: Partial<Record<ToolState['tool'], string>> = {
   'buy-land': `${money.format(COSTS.landPurchase)} per tile`,
 };
 
-export function App({ game, tools }: { game: GameRenderer; tools: ToolController }) {
+export interface DevActions {
+  layTestPaths(): void;
+  addGuests(n: number): void;
+  fillTo(n: number): void;
+}
+
+interface AppProps {
+  game: GameRenderer;
+  tools: ToolController;
+  sim: SimClient;
+  dev: DevActions;
+  showHelp?: boolean;
+}
+
+export function App({ game, tools, sim, dev, showHelp: helpAtStart = true }: AppProps) {
   const [stats, setStats] = useState<RendererStats | null>(null);
   const [tool, setTool] = useState<ToolState>(tools.state);
+  const [simStats, setSimStats] = useState<SimStats>(sim.stats);
   const [toast, setToast] = useState<string | null>(null);
-  const [showHelp, setShowHelp] = useState(true);
+  const [showHelp, setShowHelp] = useState(helpAtStart);
+  const [showPerf, setShowPerf] = useState(!helpAtStart);
 
   useEffect(() => game.onStats(setStats), [game]);
   useEffect(() => tools.subscribe(setTool), [tools]);
+  useEffect(() => sim.onStats(setSimStats), [sim]);
 
   // Show each feedback message briefly.
   useEffect(() => {
@@ -44,6 +64,9 @@ export function App({ game, tools }: { game: GameRenderer; tools: ToolController
           Thrillwright
         </div>
         <div class="cash" data-testid="cash" title="Park cash">{money.format(tool.cash)}</div>
+        <div class="guests" data-testid="guests" title="Guests in the park">
+          {count.format(simStats.guests)} guests
+        </div>
       </header>
 
       <div class="toolbar camera" role="toolbar" aria-label="Camera">
@@ -51,8 +74,29 @@ export function App({ game, tools }: { game: GameRenderer; tools: ToolController
         <button type="button" onClick={() => game.rotate(1)} title="Rotate right (E)">⟳</button>
         <button type="button" onClick={() => game.zoomBy(1.25)} title="Zoom in (+)">＋</button>
         <button type="button" onClick={() => game.zoomBy(0.8)} title="Zoom out (−)">－</button>
+        <button type="button" onClick={() => setShowPerf((v) => !v)} title="Performance test" aria-pressed={showPerf}>⚡</button>
         <button type="button" onClick={() => setShowHelp((v) => !v)} title="Controls">?</button>
       </div>
+
+      {showPerf && (
+        <aside class="panel perf" aria-label="Performance test" data-testid="perf">
+          <h2>Performance test</h2>
+          <dl>
+            <dt>Guests</dt><dd data-testid="perf-guests">{count.format(simStats.guests)}</dd>
+            <dt>Frame rate</dt><dd>{stats ? `${stats.fps} fps` : '…'}</dd>
+            <dt>Simulation</dt><dd data-testid="perf-tick">{simStats.tickMs.toFixed(2)} ms per tick</dd>
+            <dt>Arrived / left</dt><dd>{count.format(simStats.arrived)} / {count.format(simStats.left)}</dd>
+          </dl>
+          <div class="row">
+            <button type="button" onClick={() => dev.layTestPaths()} title="Free; undo with Ctrl+Z">Lay test paths</button>
+          </div>
+          <div class="row">
+            <button type="button" onClick={() => dev.addGuests(1000)}>+1,000 guests</button>
+            <button type="button" onClick={() => dev.fillTo(10_000)}>Fill to 10,000</button>
+          </div>
+          <p class="note">Guests only walk on paths. Lay test paths first for a big crowd.</p>
+        </aside>
+      )}
 
       <div class="dock">
         {active && active.id !== 'inspect' && (
