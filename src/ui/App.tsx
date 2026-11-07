@@ -10,8 +10,11 @@ import { BuildingInfo } from './BuildingInfo';
 import { BuildMenu } from './BuildMenu';
 import { CoasterBuilder } from './CoasterBuilder';
 import { count, money } from './format';
-import { ToolIcon } from './icons';
+import { StaffIcon, ToolIcon } from './icons';
 import { ParkPanel } from './ParkPanel';
+import { StaffPanel } from './StaffPanel';
+import { GuestInfo } from './GuestInfo';
+import { buildingType } from '../core/catalog';
 
 const VIEW_NAMES = ['North-east', 'South-east', 'South-west', 'North-west'];
 const FACING = ['north', 'east', 'south', 'west'];
@@ -23,6 +26,8 @@ const TOOL_COST: Partial<Record<ToolState['tool'], string>> = {
   'water-down': `${money.format(COSTS.waterStep)} per tile`,
   path: `${money.format(COSTS.path)} per tile`,
   'buy-land': `${money.format(COSTS.landPurchase)} per tile`,
+  bin: `${money.format(COSTS.bin)} each`,
+  bench: `${money.format(COSTS.bench)} each`,
 };
 
 export interface DevActions {
@@ -50,6 +55,8 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
   const [showPerf, setShowPerf] = useState(!helpAtStart);
   const [showBuild, setShowBuild] = useState(false);
   const [showPark, setShowPark] = useState(false);
+  const [showStaff, setShowStaff] = useState(false);
+  const [, setStaffVersion] = useState(0);
   const [, setVersion] = useState(park.version);
   const [builder, setBuilder] = useState<BuilderState>(coaster.state);
 
@@ -57,6 +64,7 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
   useEffect(() => tools.subscribe(setTool), [tools]);
   useEffect(() => sim.onStats(setSimStats), [sim]);
   useEffect(() => coaster.subscribe(setBuilder), [coaster]);
+  useEffect(() => park.onStaff(() => setStaffVersion((v) => v + 1)), [park]);
   useEffect(() => park.onChange(() => setVersion(park.version)), [park]);
 
   // Show each feedback message briefly.
@@ -68,6 +76,10 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
   }, [tool.message?.id]);
 
   const active = TOOLS.find((t) => t.id === tool.tool);
+  const nameOf = (id: number) => {
+    const b = park.buildings.find((x) => x.id === id);
+    return b ? buildingType(b.type).name : 'a ride';
+  };
   const selected = tool.selected !== null ? park.buildings.find((b) => b.id === tool.selected) : undefined;
   const buildName = tool.buildType ? (document.querySelector(`[data-build="${tool.buildType}"] .item-name`)?.textContent ?? '') : '';
 
@@ -79,8 +91,11 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
           Thrillwright
         </div>
         <div class="cash" data-testid="cash" title="Park cash">{money.format(tool.cash)}</div>
-        <button type="button" class="guests" data-testid="guests" title="Guest details" onClick={() => setShowPark((v) => !v)}>
+        <button type="button" class="guests" data-testid="guests" title="Park and guest details" onClick={() => setShowPark((v) => !v)}>
           {count.format(simStats.guests)} guests
+        </button>
+        <button type="button" class="guests rating" data-testid="rating" title="Park rating" onClick={() => setShowPark((v) => !v)}>
+          ★ {simStats.rating}
         </button>
       </header>
 
@@ -123,7 +138,25 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
             onClose={() => setShowBuild(false)}
           />
         )}
-        {showPark && <ParkPanel stats={simStats} onClose={() => setShowPark(false)} />}
+        {simStats.guest && (
+          <GuestInfo guest={simStats.guest} nameOf={nameOf} onClose={() => sim.inspectAt(null)} />
+        )}
+        {showPark && (
+          <ParkPanel
+            stats={simStats}
+            nameOf={nameOf}
+            onClose={() => setShowPark(false)}
+          />
+        )}
+        {showStaff && (
+          <StaffPanel
+            handymen={park.staff.handymen}
+            mechanics={park.staff.mechanics}
+            stats={simStats.staff}
+            onChange={(kind, delta) => park.setStaff(kind, delta)}
+            onClose={() => setShowStaff(false)}
+          />
+        )}
         {showPerf && (
           <aside class="panel perf" aria-label="Performance test" data-testid="perf">
             <div class="panel-head">
@@ -183,6 +216,17 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
             <ToolIcon tool="build" />
             <span class="tool-label">Rides &amp; stalls</span>
           </button>
+          <button
+            type="button"
+            class={showStaff ? 'tool active' : 'tool'}
+            aria-pressed={showStaff}
+            title="Hire staff"
+            data-tool="staff"
+            onClick={() => setShowStaff((v) => !v)}
+          >
+            <StaffIcon />
+            <span class="tool-label">Staff</span>
+          </button>
           <span class="divider" />
           <div class="brush" role="group" aria-label="Brush size">
             {BRUSH_SIZES.map((size) => (
@@ -219,10 +263,10 @@ export function App({ game, park, tools, coaster, sim, dev, showHelp: helpAtStar
           <ul>
             <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or right-drag: move</li>
             <li>Scroll or <kbd>+</kbd>/<kbd>−</kbd>: zoom · <kbd>Q</kbd>/<kbd>E</kbd>: rotate</li>
-            <li><kbd>1</kbd>–<kbd>7</kbd>: land tools · <kbd>Esc</kbd>: look</li>
+            <li><kbd>1</kbd>–<kbd>7</kbd>: land tools · <kbd>8</kbd>/<kbd>9</kbd>: bin, bench · <kbd>Esc</kbd>: look</li>
             <li>Rides &amp; stalls menu, <kbd>R</kbd>: turn entrance</li>
             <li><kbd>C</kbd>: coaster builder</li>
-            <li>Look tool: click a ride for details</li>
+            <li>Look tool: click a ride or a guest for details</li>
             <li><kbd>[</kbd>/<kbd>]</kbd>: brush · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd>: undo, redo</li>
           </ul>
           <button type="button" onClick={() => setShowHelp(false)}>Got it</button>

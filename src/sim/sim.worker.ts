@@ -14,6 +14,7 @@ let paused = false;
 const spare: ArrayBuffer[] = [];
 let last = performance.now();
 let debt = 0;
+let lastDirt = 0;
 
 function bufferFor(count: number): ArrayBuffer {
   const bytes = Math.max(count, 64) * SNAPSHOT_STRIDE * 4;
@@ -46,6 +47,11 @@ function loop(): void {
   const buffer = bufferFor(sim.guests.count);
   const count = sim.writeSnapshot(new Float32Array(buffer));
   const msg: FromWorker = { type: 'snapshot', buffer, count, stats: sim.stats() };
+  // Litter changes slowly: send it about once a second.
+  if (performance.now() - lastDirt > 1000) {
+    lastDirt = performance.now();
+    msg.dirt = { litter: sim.litter.slice(), vomit: sim.vomit.slice() };
+  }
   self.postMessage(msg, [buffer]);
 }
 
@@ -64,6 +70,12 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'spawn':
       sim?.spawnScattered(msg.count);
+      break;
+    case 'inspect':
+      sim?.inspectAt(msg.tile);
+      break;
+    case 'staff':
+      sim?.setStaff(msg.handymen, msg.mechanics);
       break;
     case 'paused':
       paused = msg.paused;

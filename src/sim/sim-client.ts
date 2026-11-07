@@ -8,7 +8,8 @@ import { COASTER_SEATS } from '../core/coaster';
 import { tileIndex } from '../core/terrain';
 import type { Park } from '../game/park';
 import type { FromWorker, ToWorker, WorldData } from './protocol';
-import { EMPTY_AVERAGES, type SimConfig, type SimStats } from './sim-core';
+import { EMPTY_AVERAGES, TICK_RATE, type SimConfig, type SimEvent, type SimStats } from './sim-core';
+import { ratingParts } from './rating';
 
 export interface GuestSnapshot {
   data: Float32Array;
@@ -22,7 +23,18 @@ export class SimClient {
   private current: GuestSnapshot | null = null;
   private syncedVersion: number;
   private config: SimConfig;
-  private lastStats: SimStats = { guests: 0, arrived: 0, left: 0, tick: 0, tickMs: 0, income: 0, averages: EMPTY_AVERAGES, buildings: [] };
+  private lastStats: SimStats = {
+    guests: 0, arrived: 0, left: 0, tick: 0, tickMs: 0, income: 0, averages: EMPTY_AVERAGES, buildings: [],
+    rating: 50,
+    ratingParts: ratingParts({ guests: 0, happiness: 0, rides: 0, rideKinds: 0, dirtyTiles: 0, brokenRides: 0, unhappyLeavers: 0 }),
+    thoughts: { top: [], recent: [] },
+    staff: { handymen: 0, mechanics: 0, swept: 0, repairs: 0 },
+    events: [],
+    guest: null,
+  };
+  private readonly eventListeners = new Set<(e: SimEvent) => void>();
+  /** Latest litter and sick per tile. */
+  dirt: { litter: Uint8Array; vomit: Uint8Array; version: number } | null = null;
   private readonly listeners = new Set<(s: SimStats) => void>();
   private lastEmit = 0;
 
@@ -33,6 +45,23 @@ export class SimClient {
     this.syncedVersion = park.version;
     this.send({ type: 'init', world: this.worldData(), entrances, config });
     park.onChange(() => this.syncWorld());
+    park.onStaff(() => this.syncStaff());
+    this.syncStaff();
+  }
+
+  /** Breakdowns, repairs and other news from the simulation. */
+  onEvent(listener: (e: SimEvent) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => this.eventListeners.delete(listener);
+  }
+
+  /** Show the guest nearest this tile in the info window, or close it with null. */
+  inspectAt(tile: { tx: number; ty: number } | null): void {
+    this.send({ type: 'inspect', tile });
+  }
+
+  private syncStaff(): void {
+    this.send({ type: 'staff', handymen: this.park.staff.handymen, mechanics: this.park.staff.mechanics });
   }
 
   get snapshot(): GuestSnapshot | null {
@@ -94,7 +123,7 @@ export class SimClient {
       const r = b.coaster?.ratings;
       if (r) {
         return {
-          id: b.id, kind: type.kind, ax: a.tx, ay: a.ty, price: b.price, open: b.open,
+          id: b.id, kind: type.kind, type: b.type, ax: a.tx, ay: a.ty, price: b.price, open: b.open,
           excitement: r.excitement, intensity: r.intensity, nausea: r.nausea,
           // The train's run plus a few seconds to unload in the station.
           capacity: COASTER_SEATS, cycle: r.duration + 4, satisfies: 0,
@@ -103,6 +132,7 @@ export class SimClient {
       return {
         id: b.id,
         kind: type.kind,
+        type: b.type,
         ax: a.tx,
         ay: a.ty,
         price: b.price,
@@ -115,7 +145,7 @@ export class SimClient {
         satisfies: type.satisfies ?? 0,
       };
     });
-    return { width: t.width, height: t.height, corners: t.corners.slice(), paths, buildings };
+    return { width: t.width, height: t.height, corners: t.corners.slice(), paths, items: t.items.slice(), buildings };
   }
 
   private receive(msg: FromWorker): void {
@@ -123,8 +153,13 @@ export class SimClient {
     const previous = this.current;
     this.current = { data: new Float32Array(msg.buffer), count: msg.count, receivedAt: performance.now() };
     if (previous) this.send({ type: 'recycle', buffer: previous.data.buffer as ArrayBuffer }, [previous.data.buffer as ArrayBuffer]);
+    const ticks = msg.stats.tick - this.lastStats.tick;
     this.lastStats = msg.stats;
     this.park.earn(msg.stats.income);
+    // Staff are paid for simulated time, so a paused park costs nothing.
+    if (ticks > 0 && ticks < TICK_RATE * 5) this.park.payWages(ticks / TICK_RATE);
+    for (const e of msg.stats.events) for (const l of this.eventListeners) l(e);
+    if (msg.dirt) this.dirt = { ...msg.dirt, version: (this.dirt?.version ?? 0) + 1 };
     const now = performance.now();
     if (now - this.lastEmit > 250) {
       this.lastEmit = now;

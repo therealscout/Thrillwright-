@@ -7,6 +7,7 @@ import type { TileCoord } from './grid';
 import {
   MAX_HEIGHT,
   MIN_HEIGHT,
+  PathItem,
   cornerIndex,
   isPathable,
   isUnderwater,
@@ -197,6 +198,7 @@ export function removePath(t: Terrain, tiles: TileCoord[]): EditResult {
     const k = tileIndex(t, tx, ty);
     if (t.paths[k] && isOwned(t, tx, ty)) {
       t.paths[k] = 0;
+      t.items[k] = PathItem.None;
       removed++;
     }
   }
@@ -209,5 +211,25 @@ export function buyLand(t: Terrain, tiles: TileCoord[], budget: number): EditRes
   const cost = targets.length * COSTS.landPurchase;
   if (cost > budget) return { ok: false, cost, reason: 'Not enough cash.' };
   for (const k of targets) t.owned[k] = 1;
+  return { ok: true, cost };
+}
+
+/** Put a bin or bench on every path tile of the brush that has nothing on it yet. */
+export function placeItem(t: Terrain, tiles: TileCoord[], item: PathItem, budget: number): EditResult {
+  const targets: number[] = [];
+  let reason = 'Bins and benches go on paths.';
+  for (const { tx, ty } of tiles) {
+    const k = tileIndex(t, tx, ty);
+    if (!t.paths[k] || !isOwned(t, tx, ty)) continue;
+    if (t.items[k] === item) {
+      reason = 'There is already one here.';
+      continue;
+    }
+    targets.push(k);
+  }
+  if (targets.length === 0) return fail(reason);
+  const cost = targets.length * (item === PathItem.Bin ? COSTS.bin : COSTS.bench);
+  if (cost > budget) return { ok: false, cost, reason: 'Not enough cash.' };
+  for (const k of targets) t.items[k] = item;
   return { ok: true, cost };
 }

@@ -99,7 +99,10 @@ export class GuestLayer {
           '#include <color_vertex>',
           `#include <color_vertex>
           #ifdef USE_COLOR
-          if (color.r > 0.99 && color.g > 0.99 && color.b > 0.99) {
+          if (aExtra.x > 255.5 && color.r > 0.99 && color.g > 0.99 && color.b > 0.99) {
+            // Staff uniforms: 256 handyman, 257 mechanic.
+            vColor.rgb = aExtra.x > 256.5 ? vec3(0.95, 0.45, 0.1) : vec3(0.15, 0.6, 0.3);
+          } else if (color.r > 0.99 && color.g > 0.99 && color.b > 0.99) {
             vColor.rgb = uShirts[int(mod(aExtra.x, ${SHIRTS.length}.0))];
           } else if (color.r > 0.99 && color.g < 0.01) {
             vColor.rgb = uSkins[int(mod(floor(aExtra.x / ${SHIRTS.length}.0), ${SKINS.length}.0))];

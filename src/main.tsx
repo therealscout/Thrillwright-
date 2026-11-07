@@ -25,6 +25,20 @@ let benchCap: number | null = null;
 const sim = new SimClient(park, entrances, parkDemand());
 game.setGuestSource(() => sim.snapshot);
 game.setBuildingStatsSource(() => sim.stats.buildings);
+game.setDirtSource(() => sim.dirt);
+tools.onPickGuest = (tile) => sim.inspectAt(tile);
+
+// Tell the player when rides break down and get fixed.
+sim.onEvent((e) => {
+  const b = park.buildings.find((x) => x.id === e.id);
+  if (!b) return;
+  const name = buildingType(b.type).name;
+  if (e.kind === 'breakdown') {
+    tools.notify(park.staff.mechanics > 0 ? `${name} has broken down. A mechanic is on the way.` : `${name} has broken down! Hire a mechanic to fix it.`);
+  } else {
+    tools.notify(`${name} is fixed and running again.`, 'info');
+  }
+});
 
 /**
  * How many guests the park attracts. More rides draw bigger crowds; the park
@@ -37,6 +51,7 @@ function parkDemand() {
   return {
     arrivalRate: 0.4 + rides * 0.35 + stalls * 0.05,
     maxGuests: benchCap ?? 120 + rides * 220 + stalls * 30,
+    useRating: benchCap === null,
   };
 }
 park.onChange(() => sim.setConfig(parkDemand()));

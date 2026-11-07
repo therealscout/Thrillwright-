@@ -6,6 +6,7 @@ export interface WorldData {
   height: number;
   corners: Uint8Array;
   paths: Uint8Array;
+  items: Uint8Array;
   buildings: SimBuilding[];
 }
 
@@ -15,6 +16,8 @@ export type ToWorker =
   | { type: 'config'; config: SimConfig }
   | { type: 'spawn'; count: number }
   | { type: 'paused'; paused: boolean }
+  | { type: 'staff'; handymen: number; mechanics: number }
+  | { type: 'inspect'; tile: { tx: number; ty: number } | null }
   /** Hand a used snapshot buffer back so the worker can refill it. */
   | { type: 'recycle'; buffer: ArrayBuffer };
 
@@ -24,4 +27,6 @@ export type FromWorker = {
   count: number;
   /** performance.now() in the worker when the snapshot was taken. */
   stats: SimStats;
+  /** About once a second: litter and sick per tile, for drawing. */
+  dirt?: { litter: Uint8Array; vomit: Uint8Array };
 };

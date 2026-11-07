@@ -16,6 +16,7 @@ import type { GuestSnapshot } from '../sim/sim-client';
 import type { BuildingStats } from '../sim/sim-core';
 import { BuildingLayer } from './building-layer';
 import { CoasterLayer } from './coaster-layer';
+import { PathLayer } from './path-layer';
 import type { CoasterDesign } from '../core/coaster';
 import { GuestLayer } from './guest-layer';
 import { palette } from './palette';
@@ -70,6 +71,8 @@ export class GameRenderer {
   private readonly guests = new GuestLayer();
   private readonly buildingLayer = new BuildingLayer();
   private readonly coasterLayer = new CoasterLayer();
+  private readonly pathLayer = new PathLayer();
+  private dirtSource: (() => { litter: Uint8Array; vomit: Uint8Array; version: number } | null) | null = null;
   private draftSource: (() => { design: CoasterDesign | null; version: number }) | null = null;
   private trackGhost: { design: CoasterDesign; valid: boolean } | null = null;
   private guestSource: (() => GuestSnapshot | null) | null = null;
@@ -159,7 +162,7 @@ export class GameRenderer {
     this.gate.position.set(entrance.tx, 0, entrance.ty + 0.5);
     this.scene.add(this.gate);
     this.scene.add(this.guests.mesh);
-    this.scene.add(this.buildingLayer.group, this.coasterLayer.group);
+    this.scene.add(this.buildingLayer.group, this.coasterLayer.group, this.pathLayer.group);
 
     this.bindInput();
     this.resize();
@@ -191,6 +194,11 @@ export class GameRenderer {
   /** Preview of a building being placed, or null. */
   setGhost(ghost: { type: string; x: number; y: number; facing: Building['facing']; valid: boolean } | null): void {
     this.buildingLayer.setGhost(ghost, this.park.terrain);
+  }
+
+  /** Where to read litter and sick from (the simulation client). */
+  setDirtSource(source: () => { litter: Uint8Array; vomit: Uint8Array; version: number } | null): void {
+    this.dirtSource = source;
   }
 
   /** Preview of a coaster station about to be placed, or null. */
@@ -242,6 +250,7 @@ export class GameRenderer {
     this.placeTrees(t);
     this.buildingLayer.sync(this.park.buildings, t);
     this.coasterLayer.sync(this.park.buildings, t);
+    this.pathLayer.syncItems(t);
     this.gate.position.y = tileCentreY(t, Math.floor(this.gate.position.x), Math.floor(this.gate.position.z));
     this.builtVersion = this.park.version;
   }
@@ -459,6 +468,7 @@ export class GameRenderer {
     const buildingStats = this.buildingStatsSource?.() ?? [];
     this.buildingLayer.update(dt, buildingStats);
     this.coasterLayer.update(dt, buildingStats);
+    this.pathLayer.syncDirt(this.park.terrain, this.dirtSource?.() ?? null);
     const draft = this.draftSource?.();
     if (this.trackGhost) {
       const g = this.trackGhost.design.start;

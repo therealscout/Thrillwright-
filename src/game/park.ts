@@ -5,10 +5,10 @@
 import { checkPlacement, setBlocked, type Building, type Facing } from '../core/buildings';
 import { buildingType } from '../core/catalog';
 import { checkDesign, checkEntrance, type CoasterInfo } from '../core/coaster';
-import { STARTING_CASH } from '../core/costs';
+import { STARTING_CASH, WAGES } from '../core/costs';
 import type { TileCoord } from '../core/grid';
-import { cloneTerrain, restoreTerrain, type Terrain } from '../core/terrain';
-import { buyLand, moveLand, moveWater, placePath, removePath, type EditResult } from '../core/terrain-edit';
+import { cloneTerrain, PathItem, restoreTerrain, type Terrain } from '../core/terrain';
+import { buyLand, moveLand, moveWater, placeItem, placePath, removePath, type EditResult } from '../core/terrain-edit';
 
 export type ToolId =
   | 'inspect'
@@ -19,6 +19,8 @@ export type ToolId =
   | 'path'
   | 'remove-path'
   | 'buy-land'
+  | 'bin'
+  | 'bench'
   | 'build'
   | 'coaster';
 
@@ -36,6 +38,8 @@ interface HistoryEntry {
 export const UNDO_LIMIT = 50;
 /** Share of a building's price returned when it is demolished. */
 export const DEMOLISH_REFUND = 0.5;
+/** Most staff of each kind. */
+export const MAX_STAFF = 50;
 
 export class Park {
   cash: number;
@@ -44,6 +48,10 @@ export class Park {
   version = 0;
   /** Total income since the park opened. */
   income = 0;
+  /** Total wages paid since the park opened. */
+  wages = 0;
+  /** Staff on the payroll. */
+  readonly staff = { handymen: 0, mechanics: 0 };
   private nextBuildingId = 1;
   private readonly undoStack: HistoryEntry[] = [];
   private readonly redoStack: HistoryEntry[] = [];
@@ -52,6 +60,7 @@ export class Park {
   private strokeChanged = false;
   private readonly listeners = new Set<() => void>();
   private readonly cashListeners = new Set<() => void>();
+  private readonly staffListeners = new Set<() => void>();
 
   constructor(readonly terrain: Terrain, cash = STARTING_CASH) {
     this.cash = cash;
@@ -67,6 +76,33 @@ export class Park {
   onCash(listener: () => void): () => void {
     this.cashListeners.add(listener);
     return () => this.cashListeners.delete(listener);
+  }
+
+  /** Staff hired or fired. */
+  onStaff(listener: () => void): () => void {
+    this.staffListeners.add(listener);
+    return () => this.staffListeners.delete(listener);
+  }
+
+  /** Change the number of handymen or mechanics by `delta` (no undo: staff are people). */
+  setStaff(kind: 'handymen' | 'mechanics', delta: number): void {
+    const next = Math.max(0, Math.min(MAX_STAFF, this.staff[kind] + delta));
+    if (next === this.staff[kind]) return;
+    this.staff[kind] = next;
+    for (const l of this.staffListeners) l();
+  }
+
+  /** Wages for every staff member, per minute of play. */
+  get wageBill(): number {
+    return this.staff.handymen * WAGES.handyman + this.staff.mechanics * WAGES.mechanic;
+  }
+
+  /** Pay staff for `seconds` of work. Cash may go below zero. */
+  payWages(seconds: number): void {
+    const amount = (this.wageBill * seconds) / 60;
+    if (amount <= 0) return;
+    this.wages += amount;
+    this.adjustCash(-amount);
   }
 
   /** Start a drag. All edits until endStroke() undo as one step. */
@@ -95,6 +131,8 @@ export class Park {
       case 'path': result = placePath(t, tiles, this.cash); break;
       case 'remove-path': result = removePath(t, tiles); break;
       case 'buy-land': result = buyLand(t, tiles, this.cash); break;
+      case 'bin': result = placeItem(t, tiles, PathItem.Bin, this.cash); break;
+      case 'bench': result = placeItem(t, tiles, PathItem.Bench, this.cash); break;
       case 'inspect':
       case 'build':
       case 'coaster':

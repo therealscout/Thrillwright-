@@ -21,7 +21,9 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
   const nausea = r?.nausea ?? type.nausea;
   const capacity = r ? `${COASTER_SEATS} per ${r.duration + 4} s` : `${type.capacity} per ${type.cycle} s`;
   const isRide = type.kind === 'ride';
-  const status = !building.open
+  const status = stats?.broken
+    ? 'Broken down'
+    : !building.open
     ? 'Closed'
     : isRide
       ? stats && stats.riders > 0
@@ -36,7 +38,7 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
         <h2>{type.name}</h2>
         <button type="button" class="close" onClick={onClose} aria-label="Close">×</button>
       </div>
-      <p class="status-line">{status}</p>
+      <p class={stats?.broken ? 'status-line broken' : 'status-line'}>{status}</p>
       <dl>
         {isRide && (
           <>
@@ -52,6 +54,8 @@ export function BuildingInfo({ building, stats, onPrice, onToggleOpen, onDemolis
             )}
             <dt>In queue</dt><dd data-testid="info-queue">{count.format(stats?.queue ?? 0)}</dd>
             <dt>Capacity</dt><dd>{capacity}</dd>
+            <dt>Reliability</dt><dd data-testid="info-reliability">{stats?.reliability ?? 100}%</dd>
+            <dt>Downtime</dt><dd>{stats?.downtime ?? 0} s</dd>
           </>
         )}
         <dt>{isRide ? 'Riders so far' : 'Customers'}</dt><dd data-testid="info-customers">{count.format(stats?.customers ?? 0)}</dd>

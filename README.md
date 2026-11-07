@@ -2,7 +2,7 @@
 
 An original, browser-based theme park builder: grow a park from an empty field, design roller coasters piece by piece, and keep thousands of guests happy, each with their own needs and opinions.
 
-Status: **milestone 5 (coaster builder v1)**. Open with `?bench=10000` for a 10,000-guest performance test. See [docs/](docs/) for milestone notes.
+Status: **milestone 6 (guest opinions, park rating, staff, litter and breakdowns)**. Open with `?bench=10000` for a 10,000-guest performance test. See [docs/](docs/) for milestone notes.
 
 ## Play locally
 
@@ -23,6 +23,9 @@ Then open the URL Vite prints (usually http://localhost:5173).
 | Zoom | Mouse wheel, or + / − |
 | Rotate view | Q / E |
 | Land tools | 1–7 (Esc for none) |
+| Bin, bench | 8, 9, then click a path |
+| Staff | Staff button: hire handymen and mechanics |
+| Park rating and guest thoughts | Click the ★ rating or guest count |
 | Rides and stalls | B, then R to turn the entrance |
 | Coaster builder | C, then R to turn the station |
 | Ride details | Look tool (Esc), click a ride |

@@ -34,7 +34,17 @@ export interface Terrain {
   readonly owned: Uint8Array;
   /** 1 where a ride or stall stands; the ground there can't be edited. */
   readonly blocked: Uint8Array;
+  /** Path furniture per tile (see PathItem). */
+  readonly items: Uint8Array;
 }
+
+/** Things that stand on a path tile. */
+export const PathItem = {
+  None: 0,
+  Bin: 1,
+  Bench: 2,
+} as const;
+export type PathItem = (typeof PathItem)[keyof typeof PathItem];
 
 export function createTerrain(width: number, height: number): Terrain {
   if (width <= 0 || height <= 0) throw new Error('Terrain size must be positive');
@@ -48,6 +58,7 @@ export function createTerrain(width: number, height: number): Terrain {
     paths: new Uint8Array(tiles),
     owned: new Uint8Array(tiles),
     blocked: new Uint8Array(tiles),
+    items: new Uint8Array(tiles),
   };
 }
 
@@ -118,6 +129,7 @@ export function cloneTerrain(t: Terrain): Terrain {
     paths: t.paths.slice(),
     owned: t.owned.slice(),
     blocked: t.blocked.slice(),
+    items: t.items.slice(),
   };
 }
 
@@ -129,4 +141,5 @@ export function restoreTerrain(target: Terrain, source: Terrain): void {
   target.paths.set(source.paths);
   target.owned.set(source.owned);
   target.blocked.set(source.blocked);
+  target.items.set(source.items);
 }

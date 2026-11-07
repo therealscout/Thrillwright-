@@ -69,6 +69,11 @@ export class GuestStore {
   readonly lastRide: Uint32Array;
   /** Rides taken this visit. */
   readonly rides: Uint16Array;
+  /** Seconds left before litter in hand is dropped (0 when empty-handed). */
+  readonly carrying: Float32Array;
+  /** Latest thought (see thoughts.ts) and the building it is about. */
+  readonly thought: Uint8Array;
+  readonly thoughtAbout: Uint32Array;
 
   constructor(readonly capacity: number) {
     this.id = new Uint32Array(capacity);
@@ -97,6 +102,9 @@ export class GuestStore {
     this.ticket = new Uint32Array(capacity);
     this.lastRide = new Uint32Array(capacity);
     this.rides = new Uint16Array(capacity);
+    this.carrying = new Float32Array(capacity);
+    this.thought = new Uint8Array(capacity);
+    this.thoughtAbout = new Uint32Array(capacity);
   }
 
   get full(): boolean {
@@ -134,6 +142,9 @@ export class GuestStore {
     this.ticket[i] = 0;
     this.lastRide[i] = 0;
     this.rides[i] = 0;
+    this.carrying[i] = 0;
+    this.thought[i] = 0;
+    this.thoughtAbout[i] = 0;
     return i;
   }
 
@@ -159,7 +170,7 @@ export class GuestStore {
       this.id, this.state, this.fromX, this.fromY, this.toX, this.toY, this.progress, this.speed,
       this.lane, this.age, this.stay, this.rng, this.look, this.happiness, this.energy, this.hunger,
       this.thirst, this.toilet, this.nausea, this.cash, this.intensityPref, this.nauseaTolerance,
-      this.target, this.ticket, this.lastRide, this.rides,
+      this.target, this.ticket, this.lastRide, this.rides, this.carrying, this.thought, this.thoughtAbout,
     ];
   }
 }

@@ -10,6 +10,17 @@
 import { HEIGHT_STEP } from '../core/grid';
 import { GuestState, GuestStore } from './guests';
 import { DIRS, UNREACHABLE, buildDistanceMap, isPath, type PathGrid } from './path-map';
+import { demandFactor, ratingParts, targetRating, type RatingParts } from './rating';
+import { StaffKind, StaffState, StaffStore } from './staff';
+import { Thought, ThoughtLog, type ThoughtEntry } from './thoughts';
+
+/** Path items, matching PathItem in core/terrain. */
+const BIN = 1;
+const BENCH = 2;
+/** Pieces of litter a bin holds before it overflows. */
+export const BIN_CAPACITY = 40;
+/** Litter plus three times the sick on a tile above this makes it "dirty". */
+const DIRTY = 2;
 
 export const TICK_RATE = 20;
 export const TICK_SECONDS = 1 / TICK_RATE;
@@ -35,10 +46,14 @@ export interface SimBuilding {
   capacity: number;
   cycle: number;
   satisfies: number;
+  /** Ride type id, for counting ride variety. */
+  type?: string;
 }
 
 export interface SimWorld extends PathGrid {
   readonly corners: Uint8Array;
+  /** Path items per tile (bins and benches). */
+  readonly items?: Uint8Array;
   readonly buildings?: readonly SimBuilding[];
 }
 
@@ -47,6 +62,8 @@ export interface SimConfig {
   arrivalRate: number;
   /** Most guests allowed in the park at once. */
   maxGuests: number;
+  /** Scale arrivals and the guest cap by the park rating (off for benchmarks). */
+  useRating?: boolean;
 }
 
 export interface BuildingStats {
@@ -57,6 +74,11 @@ export interface BuildingStats {
   phase: number;
   customers: number;
   revenue: number;
+  broken: boolean;
+  /** 0..100: worn rides break down more often. */
+  reliability: number;
+  /** Seconds spent broken down in total. */
+  downtime: number;
 }
 
 export interface GuestAverages {
@@ -80,7 +102,42 @@ export interface SimStats {
   income: number;
   averages: GuestAverages;
   buildings: BuildingStats[];
+  /** Park rating 0..100 and what makes it up. */
+  rating: number;
+  ratingParts: RatingParts;
+  thoughts: { top: Array<{ thought: Thought; count: number }>; recent: ThoughtEntry[] };
+  staff: { handymen: number; mechanics: number; swept: number; repairs: number };
+  /** Things that happened since the last stats() call. */
+  events: SimEvent[];
+  /** The guest picked for the info window, while they're still in the park. */
+  guest: GuestDetails | null;
 }
+
+export interface GuestDetails {
+  id: number;
+  state: 'wandering' | 'leaving' | 'heading' | 'queuing' | 'riding';
+  /** Ride or stall they are heading to, queuing for or riding. */
+  target: number;
+  happiness: number;
+  energy: number;
+  hunger: number;
+  thirst: number;
+  toilet: number;
+  nausea: number;
+  cash: number;
+  rides: number;
+  /** Most intense ride (0..10) they'll go on. */
+  maxIntensity: number;
+  minutes: number;
+  thought: Thought;
+  thoughtAbout: number;
+  tx: number;
+  ty: number;
+}
+
+const STATE_NAMES: ReadonlyArray<GuestDetails['state']> = ['wandering', 'leaving', 'heading', 'queuing', 'riding'];
+
+export type SimEvent = { kind: 'breakdown'; id: number } | { kind: 'fixed'; id: number };
 
 interface BuildingRuntime {
   def: SimBuilding;
@@ -92,6 +149,21 @@ interface BuildingRuntime {
   riders: number;
   customers: number;
   revenue: number;
+  reliability: number;
+  broken: boolean;
+  downtime: number;
+  /** Staff id of the mechanic on the way, or 0. */
+  mechanic: number;
+}
+
+/** Staff walking speed, tiles per second. */
+const STAFF_SPEED = 1.4;
+/** Handymen head for dirt within this many path tiles; further away they patrol. */
+const SWEEP_RANGE = 24;
+
+/** The most a guest happily pays for a ride of this excitement, in dollars. */
+export function fairPrice(excitement: number): number {
+  return excitement * 0.9 + 1.5;
 }
 
 export const EMPTY_AVERAGES: GuestAverages = { happiness: 0, hunger: 0, thirst: 0, toilet: 0, energy: 0, nausea: 0, cash: 0 };
@@ -109,6 +181,22 @@ export class SimCore {
   private income = 0;
   private nextTicket = 1;
   private tickTimes: number[] = [];
+  readonly thoughts = new ThoughtLog();
+  readonly staff = new StaffStore();
+  /** Litter and sick per tile (0..255). */
+  litter: Uint8Array;
+  vomit: Uint8Array;
+  /** How full each bin is. */
+  binFill: Uint8Array;
+  /** Distance along paths to the nearest dirty tile or full bin. */
+  private dirtMap: Uint16Array;
+  rating = 50;
+  private unhappyLeavers = 0;
+  private events: SimEvent[] = [];
+  private swept = 0;
+  private repairs = 0;
+  /** Guest shown in the info window. */
+  private inspectedId = 0;
 
   constructor(
     world: SimWorld,
@@ -119,6 +207,11 @@ export class SimCore {
     this.guests = new GuestStore(capacity);
     this.world = world;
     this.exitMap = buildDistanceMap(world, entrances);
+    const tiles = world.width * world.height;
+    this.litter = new Uint8Array(tiles);
+    this.vomit = new Uint8Array(tiles);
+    this.binFill = new Uint8Array(tiles);
+    this.dirtMap = new Uint16Array(tiles).fill(UNREACHABLE);
     this.syncBuildings();
   }
 
@@ -127,6 +220,21 @@ export class SimCore {
     this.world = world;
     this.exitMap = buildDistanceMap(world, this.entrances);
     this.syncBuildings();
+    // Litter only lies on paths; bins that were removed are gone.
+    for (let k = 0; k < this.litter.length; k++) {
+      if (!world.paths[k]) this.litter[k] = this.vomit[k] = 0;
+      if (world.items?.[k] !== BIN) this.binFill[k] = 0;
+    }
+    this.rebuildDirtMap();
+    const st = this.staff;
+    for (let i = st.count - 1; i >= 0; i--) {
+      if (!isPath(world, st.toX[i] as number, st.toY[i] as number)) this.placeStaff(i);
+      const target = st.target[i] as number;
+      if (target && !this.buildings.has(target)) {
+        st.target[i] = 0;
+        st.state[i] = StaffState.Patrolling;
+      }
+    }
     const g = this.guests;
     for (let i = g.count - 1; i >= 0; i--) {
       // Guests whose ride or stall vanished go back to wandering.
@@ -177,6 +285,8 @@ export class SimCore {
       if (!this.move(i)) this.removeGuest(i);
     }
     this.runRides();
+    for (let i = 0; i < this.staff.count; i++) this.moveStaff(i);
+    if (this.tickCount % TICK_RATE === 0) this.everySecond();
     this.tickTimes.push(performance.now() - start);
     if (this.tickTimes.length > TICK_RATE) this.tickTimes.shift();
   }
@@ -194,8 +304,13 @@ export class SimCore {
         phase: b.running ? Math.min(b.timer / b.def.cycle, 1) : 0,
         customers: b.customers,
         revenue: b.revenue,
+        broken: b.broken,
+        reliability: Math.round(b.reliability),
+        downtime: Math.round(b.downtime),
       });
     }
+    const events = this.events;
+    this.events = [];
     return {
       guests: this.guests.count,
       arrived: this.arrived,
@@ -205,6 +320,17 @@ export class SimCore {
       income,
       averages: this.averages(),
       buildings,
+      rating: Math.round(this.rating),
+      ratingParts: ratingParts(this.ratingInputs()),
+      thoughts: { top: this.thoughts.top(6), recent: this.thoughts.recent.slice() },
+      staff: {
+        handymen: this.staff.countOf(StaffKind.Handyman),
+        mechanics: this.staff.countOf(StaffKind.Mechanic),
+        swept: this.swept,
+        repairs: this.repairs,
+      },
+      events,
+      guest: this.guestDetails(),
     };
   }
 
@@ -248,6 +374,29 @@ export class SimCore {
       out[o + 7] = g.look[i] as number;
       n++;
     }
+    const st = this.staff;
+    for (let i = 0; i < st.count && n < max; i++) {
+      const fx = (st.fromX[i] as number) + 0.5;
+      const fz = (st.fromY[i] as number) + 0.5;
+      const dx = (st.toX[i] as number) + 0.5 - fx;
+      const dz = (st.toY[i] as number) + 0.5 - fz;
+      const p = st.progress[i] as number;
+      const x = fx + dx * p + 0.2;
+      const z = fz + dz * p - 0.2;
+      const working = st.state[i] === StaffState.Working;
+      const s = working ? 0 : STAFF_SPEED;
+      const o = n * SNAPSHOT_STRIDE;
+      out[o] = x;
+      out[o + 1] = this.heightAt(x, z);
+      out[o + 2] = z;
+      out[o + 3] = dx * s;
+      out[o + 4] = 0;
+      out[o + 5] = dz * s;
+      out[o + 6] = dx !== 0 || dz !== 0 ? Math.atan2(dx, dz) : 0;
+      // Looks of 256 and up are staff uniforms in the renderer.
+      out[o + 7] = 255 + (st.kind[i] as number);
+      n++;
+    }
     return n;
   }
 
@@ -255,12 +404,14 @@ export class SimCore {
 
   private arrive(): void {
     const g = this.guests;
-    if (g.count >= this.config.maxGuests || this.entrances.length === 0) {
+    const factor = this.config.useRating ? demandFactor(this.rating) : 1;
+    const cap = Math.round(this.config.maxGuests * factor);
+    if (g.count >= cap || this.entrances.length === 0) {
       this.arrivalDebt = 0;
       return;
     }
-    this.arrivalDebt += this.config.arrivalRate * TICK_SECONDS;
-    while (this.arrivalDebt >= 1 && g.count < this.config.maxGuests) {
+    this.arrivalDebt += this.config.arrivalRate * factor * TICK_SECONDS;
+    while (this.arrivalDebt >= 1 && g.count < cap) {
       this.arrivalDebt -= 1;
       const e = this.entrances[Math.floor(this.nextSeedFloat() * this.entrances.length)];
       if (!e || !isPath(this.world, e.tx, e.ty)) return;
@@ -291,26 +442,31 @@ export class SimCore {
     if ((g.nausea[i] as number) > 150) mood -= 2;
     if ((g.energy[i] as number) < 50) mood -= 1;
     // With nothing to do, boredom sets in slowly.
-    if (this.buildings.size === 0) mood -= 0.15;
+    if (this.buildings.size === 0) {
+      mood -= 0.15;
+      if (g.random(i) < 0.02) this.think_(i, Thought.Bored);
+    }
+    mood += this.surroundings(i);
     g.happiness[i] = Math.max(0, Math.min(255, (g.happiness[i] as number) + mood));
+    this.needThoughts(i);
 
     const state = g.state[i];
     if (state === GuestState.Leaving) return;
 
-    if (
-      (g.age[i] as number) > (g.stay[i] as number) ||
-      (g.happiness[i] as number) < 40 ||
-      (g.energy[i] as number) < 15 ||
-      (g.cash[i] as number) < 1
-    ) {
+    const broke = (g.cash[i] as number) < 1;
+    const unhappy = (g.happiness[i] as number) < 40;
+    if ((g.age[i] as number) > (g.stay[i] as number) || unhappy || (g.energy[i] as number) < 15 || broke) {
       g.state[i] = GuestState.Leaving;
       g.target[i] = 0;
+      if (unhappy) this.unhappyLeavers++;
+      if (broke) this.think_(i, Thought.OutOfCash);
       return;
     }
 
     if (state === GuestState.Heading) {
       const b = this.buildings.get(g.target[i] as number);
-      if (!b || !b.def.open || this.distTo(b, i) === UNREACHABLE) {
+      if (!b || !b.def.open || b.broken || this.distTo(b, i) === UNREACHABLE) {
+        if (b?.broken) this.think_(i, Thought.RideBroken, b.def.id);
         g.target[i] = 0;
         g.state[i] = GuestState.Wandering;
         g.happiness[i] = Math.max(0, (g.happiness[i] as number) - 4);
@@ -348,13 +504,25 @@ export class SimCore {
     let bestScore = 0.5;
     for (const b of this.buildings.values()) {
       const d = b.def;
-      if (d.kind !== 'ride' || !d.open || d.id === g.lastRide[i] || d.price > (g.cash[i] as number)) continue;
-      if (d.intensity > pref + 2.5) continue; // "Too intense for me"
+      if (d.kind !== 'ride' || !d.open || b.broken || d.id === g.lastRide[i] || d.price > (g.cash[i] as number)) continue;
+      if (d.intensity > pref + 2.5) {
+        if (g.random(i) < 0.03) this.think_(i, Thought.TooIntense, d.id);
+        continue;
+      }
       if (queasy && d.nausea > 2.5) continue;
       const dist = this.distTo(b, i);
       if (dist === UNREACHABLE) continue;
+      // Guests have a feel for what a ride is worth.
+      if (d.price > fairPrice(d.excitement) + g.random(i)) {
+        if (g.random(i) < 0.15) this.think_(i, Thought.TooExpensive, d.id);
+        continue;
+      }
       const fit = d.excitement - Math.abs(d.intensity - pref) * 0.6;
       const wait = b.queue / Math.max(d.capacity, 1);
+      if (wait > 4) {
+        if (g.random(i) < 0.08) this.think_(i, Thought.QueueTooLong, d.id);
+        continue;
+      }
       const score = fit - dist / 40 - wait * 0.4 - d.price * 0.15 + g.random(i) * 0.5;
       if (score > bestScore) {
         bestScore = score;
@@ -369,7 +537,7 @@ export class SimCore {
     let best = 0;
     let bestDist = UNREACHABLE;
     for (const b of this.buildings.values()) {
-      if (b.def.kind !== kind || !b.def.open || b.def.price > (g.cash[i] as number)) continue;
+      if (b.def.kind !== kind || !b.def.open || b.broken || b.def.price > (g.cash[i] as number)) continue;
       const d = this.distTo(b, i);
       if (d < bestDist) {
         bestDist = d;
@@ -501,8 +669,9 @@ export class SimCore {
     const d = b.def;
     g.target[i] = 0;
     g.state[i] = GuestState.Wandering;
-    if (!d.open || d.price > (g.cash[i] as number)) {
+    if (!d.open || b.broken || d.price > (g.cash[i] as number)) {
       g.happiness[i] = Math.max(0, (g.happiness[i] as number) - 5);
+      if (b.broken) this.think_(i, Thought.RideBroken, d.id);
       return;
     }
     this.charge(i, b);
@@ -516,8 +685,10 @@ export class SimCore {
       case 'food':
         g.hunger[i] = Math.max(0, (g.hunger[i] as number) - d.satisfies);
         g.happiness[i] = Math.min(255, (g.happiness[i] as number) + 8);
+        g.carrying[i] = 8 + g.random(i) * 25; // a wrapper to throw away
         return;
       case 'drink':
+        g.carrying[i] = 8 + g.random(i) * 25; // an empty cup
         g.thirst[i] = Math.max(0, (g.thirst[i] as number) - d.satisfies);
         g.toilet[i] = Math.min(255, (g.toilet[i] as number) + 30);
         g.happiness[i] = Math.min(255, (g.happiness[i] as number) + 6);
@@ -541,6 +712,10 @@ export class SimCore {
   private runRides(): void {
     for (const b of this.buildings.values()) {
       if (b.def.kind !== 'ride') continue;
+      if (b.broken) {
+        b.downtime += TICK_SECONDS;
+        continue;
+      }
       // While idle, the load timer only starts once someone is waiting.
       b.timer = !b.running && b.queue === 0 ? 0 : b.timer + TICK_SECONDS;
       if (b.running) {
@@ -574,6 +749,8 @@ export class SimCore {
       const pref = (g.intensityPref[i] as number) / 10;
       const joy = d.excitement * 7 - Math.max(0, d.intensity - pref) * 6;
       g.happiness[i] = Math.max(0, Math.min(255, (g.happiness[i] as number) + joy));
+      if (joy > 25 && g.random(i) < 0.25) this.think_(i, Thought.LovedRide, d.id);
+      else if (d.price < fairPrice(d.excitement) * 0.6 && g.random(i) < 0.1) this.think_(i, Thought.GoodValue, d.id);
       const queasy = d.nausea * 18 * (1 - (g.nauseaTolerance[i] as number) / 400);
       g.nausea[i] = Math.min(255, (g.nausea[i] as number) + queasy);
       g.energy[i] = Math.max(0, (g.energy[i] as number) - 3);
@@ -585,6 +762,9 @@ export class SimCore {
     b.riders = 0;
     b.running = false;
     b.timer = 0;
+    // Every run wears the ride a little; worn rides break down more often.
+    b.reliability = Math.max(0, b.reliability - (0.4 + d.intensity * 0.05));
+    if (this.nextSeedFloat() < (100 - b.reliability) / 500) this.breakDown(b);
   }
 
   /** Rebuild per-building runtime state, keeping counters for buildings that stay. */
@@ -593,7 +773,12 @@ export class SimCore {
     for (const def of this.world.buildings ?? []) {
       const old = this.buildings.get(def.id);
       const dist = buildDistanceMap(this.world, [{ tx: def.ax, ty: def.ay }]);
-      next.set(def.id, old ? { ...old, def, dist } : { def, dist, running: false, timer: 0, queue: 0, riders: 0, customers: 0, revenue: 0 });
+      next.set(
+        def.id,
+        old
+          ? { ...old, def, dist }
+          : { def, dist, running: false, timer: 0, queue: 0, riders: 0, customers: 0, revenue: 0, reliability: 100, broken: false, downtime: 0, mechanic: 0 },
+      );
     }
     this.buildings = next;
     // Guests already queuing for a ride that is now closed get a refund and leave the queue.
@@ -611,6 +796,399 @@ export class SimCore {
       g.state[i] = GuestState.Wandering;
       g.target[i] = 0;
     }
+  }
+
+  // ---- guest info window ---------------------------------------------------
+
+  /** Pick the guest nearest the middle of a tile for the info window (or clear it with null). */
+  inspectAt(tile: { tx: number; ty: number } | null): boolean {
+    this.inspectedId = 0;
+    if (!tile) return false;
+    const g = this.guests;
+    let best = -1;
+    let bestD = 0.9;
+    for (let i = 0; i < g.count; i++) {
+      if (g.state[i] === GuestState.Riding) continue;
+      const fx = g.fromX[i] as number, fy = g.fromY[i] as number;
+      const p = g.progress[i] as number;
+      const x = fx + ((g.toX[i] as number) - fx) * p;
+      const y = fy + ((g.toY[i] as number) - fy) * p;
+      const d = Math.hypot(x - tile.tx, y - tile.ty);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (best < 0) return false;
+    this.inspectedId = g.id[best] as number;
+    return true;
+  }
+
+  /** Follow a guest by id in the info window. */
+  inspectGuest(id: number): void {
+    this.inspectedId = id;
+  }
+
+  private guestDetails(): GuestDetails | null {
+    if (!this.inspectedId) return null;
+    const g = this.guests;
+    let i = -1;
+    for (let k = 0; k < g.count; k++) if (g.id[k] === this.inspectedId) { i = k; break; }
+    if (i < 0) {
+      this.inspectedId = 0;
+      return null;
+    }
+    return {
+      id: g.id[i] as number,
+      state: STATE_NAMES[g.state[i] as number] ?? 'wandering',
+      target: g.target[i] as number,
+      happiness: g.happiness[i] as number,
+      energy: g.energy[i] as number,
+      hunger: g.hunger[i] as number,
+      thirst: g.thirst[i] as number,
+      toilet: g.toilet[i] as number,
+      nausea: g.nausea[i] as number,
+      cash: g.cash[i] as number,
+      rides: g.rides[i] as number,
+      maxIntensity: Math.round(((g.intensityPref[i] as number) / 10 + 2.5) * 10) / 10,
+      minutes: Math.floor((g.age[i] as number) / 60),
+      thought: g.thought[i] as Thought,
+      thoughtAbout: g.thoughtAbout[i] as number,
+      tx: g.toX[i] as number,
+      ty: g.toY[i] as number,
+    };
+  }
+
+  // ---- thoughts, litter and surroundings -----------------------------------
+
+  /** Record a guest's thought. */
+  private think_(i: number, thought: Thought, about = 0): void {
+    const g = this.guests;
+    // A guest repeating themselves isn't news.
+    if (g.thought[i] === thought && g.thoughtAbout[i] === about) return;
+    g.thought[i] = thought;
+    g.thoughtAbout[i] = about;
+    this.thoughts.add({ guest: g.id[i] as number, thought, about, tick: this.tickCount });
+  }
+
+  /** Grumbles about unmet needs, now and then. */
+  private needThoughts(i: number): void {
+    const g = this.guests;
+    if (g.random(i) > 0.06) return;
+    if ((g.toilet[i] as number) > 200) this.think_(i, Thought.NeedToilet);
+    else if ((g.hunger[i] as number) > 190) this.think_(i, Thought.Hungry);
+    else if ((g.thirst[i] as number) > 190) this.think_(i, Thought.Thirsty);
+    else if ((g.energy[i] as number) < 60) this.think_(i, Thought.Tired);
+    else if ((g.happiness[i] as number) > 225 && g.random(i) < 0.3) this.think_(i, Thought.ParkLovely);
+  }
+
+  /** Litter, sick, bins and benches where the guest is. Returns a mood change. */
+  private surroundings(i: number): number {
+    const g = this.guests;
+    const w = this.world;
+    const tx = g.toX[i] as number;
+    const ty = g.toY[i] as number;
+    if (!isPath(w, tx, ty)) return 0;
+    const k = ty * w.width + tx;
+    let mood = 0;
+
+    // Rubbish in hand goes in a nearby bin, or on the floor.
+    const carrying = g.carrying[i] as number;
+    if (carrying > 0) {
+      const bin = this.binNear(tx, ty);
+      if (bin >= 0) {
+        this.binFill[bin] = (this.binFill[bin] as number) + 1;
+        g.carrying[i] = 0;
+      } else if (carrying <= 1) {
+        this.litter[k] = Math.min(255, (this.litter[k] as number) + 1);
+        g.carrying[i] = 0;
+      } else {
+        g.carrying[i] = carrying - 1;
+      }
+    }
+
+    // Very queasy guests may be sick.
+    if ((g.nausea[i] as number) > 190 && g.random(i) < 0.12) {
+      this.vomit[k] = Math.min(255, (this.vomit[k] as number) + 1);
+      g.nausea[i] = Math.max(0, (g.nausea[i] as number) - 110);
+      mood -= 8;
+      this.think_(i, Thought.Sick);
+    }
+
+    // Nobody likes a dirty path.
+    if (this.dirt(k) > DIRTY) {
+      mood -= 1.5;
+      if (g.random(i) < 0.1) this.think_(i, Thought.PathDirty);
+    }
+
+    // Tired guests rest on benches.
+    if (w.items?.[k] === BENCH && (g.energy[i] as number) < 150) {
+      g.energy[i] = Math.min(255, (g.energy[i] as number) + 25);
+      mood += 1;
+      if (g.random(i) < 0.1) this.think_(i, Thought.NiceBench);
+    }
+    return mood;
+  }
+
+  private dirt(k: number): number {
+    return (this.litter[k] as number) + (this.vomit[k] as number) * 3;
+  }
+
+  /** A bin with room on this tile or next to it, as a tile index, or -1. */
+  private binNear(tx: number, ty: number): number {
+    const w = this.world;
+    const items = w.items;
+    if (!items) return -1;
+    for (let d = -1; d < 4; d++) {
+      const nx = d < 0 ? tx : tx + (DIRS[d] as readonly [number, number])[0];
+      const ny = d < 0 ? ty : ty + (DIRS[d] as readonly [number, number])[1];
+      if (!isPath(w, nx, ny)) continue;
+      const k = ny * w.width + nx;
+      if (items[k] === BIN && (this.binFill[k] as number) < BIN_CAPACITY) return k;
+    }
+    return -1;
+  }
+
+  /** Path tiles with litter or sick on them. */
+  dirtyTiles(): number {
+    let n = 0;
+    for (let k = 0; k < this.litter.length; k++) if (this.dirt(k) > DIRTY) n++;
+    return n;
+  }
+
+  private rebuildDirtMap(): void {
+    const w = this.world;
+    const targets: Array<{ tx: number; ty: number }> = [];
+    for (let k = 0; k < this.litter.length; k++) {
+      const full = w.items?.[k] === BIN && (this.binFill[k] as number) >= BIN_CAPACITY * 0.75;
+      if (this.dirt(k) > 0 || full) targets.push({ tx: k % w.width, ty: Math.floor(k / w.width) });
+    }
+    this.dirtMap = buildDistanceMap(w, targets);
+  }
+
+  // ---- once a second -------------------------------------------------------
+
+  private everySecond(): void {
+    this.thoughts.decay();
+    this.unhappyLeavers *= 0.99;
+    this.rebuildDirtMap();
+    for (let i = 0; i < this.staff.count; i++) this.staffThink(i);
+    const target = targetRating(this.ratingInputs());
+    this.rating += (target - this.rating) * 0.05;
+  }
+
+  private ratingInputs() {
+    let rides = 0, broken = 0;
+    const kinds = new Set<string>();
+    for (const b of this.buildings.values()) {
+      if (b.def.kind !== 'ride') continue;
+      if (b.broken) broken++;
+      if (!b.def.open || b.broken) continue;
+      rides++;
+      kinds.add(b.def.type ?? String(b.def.id));
+    }
+    return {
+      guests: this.guests.count,
+      happiness: this.guests.count ? this.averages().happiness : 0,
+      rides,
+      rideKinds: kinds.size,
+      dirtyTiles: this.dirtyTiles(),
+      brokenRides: broken,
+      unhappyLeavers: this.unhappyLeavers,
+    };
+  }
+
+  // ---- breakdowns ----------------------------------------------------------
+
+  private breakDown(b: BuildingRuntime): void {
+    b.broken = true;
+    this.clearQueue(b, Thought.RideBroken);
+    this.events.push({ kind: 'breakdown', id: b.def.id });
+  }
+
+  /** Make a ride break down now (tests and debugging). */
+  forceBreakdown(id: number): void {
+    const b = this.buildings.get(id);
+    if (b && !b.broken) this.breakDown(b);
+  }
+
+  /** Send everyone queuing for a ride away with their money back. */
+  private clearQueue(b: BuildingRuntime, thought?: Thought): void {
+    const g = this.guests;
+    for (let i = 0; i < g.count; i++) {
+      if (g.state[i] !== GuestState.Queuing || g.target[i] !== b.def.id) continue;
+      g.cash[i] = (g.cash[i] as number) + b.def.price;
+      this.income -= b.def.price;
+      b.revenue -= b.def.price;
+      g.state[i] = GuestState.Wandering;
+      g.target[i] = 0;
+      if (thought) {
+        this.think_(i, thought, b.def.id);
+        g.happiness[i] = Math.max(0, (g.happiness[i] as number) - 6);
+      }
+    }
+    b.queue = 0;
+  }
+
+  // ---- staff ---------------------------------------------------------------
+
+  /** Hire or let go staff so there are this many of each. */
+  setStaff(handymen: number, mechanics: number): void {
+    const st = this.staff;
+    for (const [kind, want] of [[StaffKind.Handyman, handymen], [StaffKind.Mechanic, mechanics]] as const) {
+      let have = st.countOf(kind);
+      for (let i = st.count - 1; i >= 0 && have > want; i--) {
+        if (st.kind[i] !== kind) continue;
+        this.releaseJob(i);
+        st.remove(i);
+        have--;
+      }
+      while (have < want) {
+        const e = this.entrances[0];
+        if (!e || st.add(kind, e.tx, e.ty) < 0) break;
+        have++;
+      }
+    }
+  }
+
+  /** Put a stranded staff member back at the entrance. */
+  private placeStaff(i: number): void {
+    const st = this.staff;
+    const e = this.entrances[0];
+    if (!e) return;
+    this.releaseJob(i);
+    st.fromX[i] = st.toX[i] = e.tx;
+    st.fromY[i] = st.toY[i] = e.ty;
+    st.progress[i] = 1;
+    st.state[i] = StaffState.Patrolling;
+  }
+
+  private releaseJob(i: number): void {
+    const b = this.buildings.get(this.staff.target[i] as number);
+    if (b && b.mechanic === this.staff.id[i]) b.mechanic = 0;
+    this.staff.target[i] = 0;
+  }
+
+  /** Once a second: mechanics pick a ride to fix or inspect. */
+  private staffThink(i: number): void {
+    const st = this.staff;
+    if (st.kind[i] !== StaffKind.Mechanic || st.state[i] !== StaffState.Patrolling) return;
+    const k = (st.toY[i] as number) * this.world.width + (st.toX[i] as number);
+    let best: BuildingRuntime | null = null;
+    let bestScore = Infinity;
+    for (const b of this.buildings.values()) {
+      if (b.def.kind !== 'ride' || b.mechanic) continue;
+      // Broken rides first, then worn ones that are due an inspection.
+      if (!b.broken && b.reliability >= 70) continue;
+      const d = b.dist[k] as number;
+      if (d === UNREACHABLE) continue;
+      const score = d + (b.broken ? 0 : 1000);
+      if (score < bestScore) {
+        bestScore = score;
+        best = b;
+      }
+    }
+    if (!best) return;
+    best.mechanic = st.id[i] as number;
+    st.target[i] = best.def.id;
+    st.repair[i] = best.broken ? 1 : 0;
+    st.state[i] = StaffState.Heading;
+  }
+
+  private moveStaff(i: number): void {
+    const st = this.staff;
+    if (st.state[i] === StaffState.Working) {
+      st.timer[i] = (st.timer[i] as number) - TICK_SECONDS;
+      if ((st.timer[i] as number) <= 0) this.finishJob(i);
+      return;
+    }
+    const p = (st.progress[i] as number) + STAFF_SPEED * TICK_SECONDS;
+    if (p < 1) {
+      st.progress[i] = p;
+      return;
+    }
+    const w = this.world;
+    const tx = st.toX[i] as number;
+    const ty = st.toY[i] as number;
+    const k = ty * w.width + tx;
+    st.fromX[i] = tx;
+    st.fromY[i] = ty;
+    st.progress[i] = 1;
+
+    // Arrived at a tile: start a job here?
+    if (st.kind[i] === StaffKind.Handyman) {
+      const full = w.items?.[k] === BIN && (this.binFill[k] as number) > 0;
+      if (this.dirt(k) > 0 || full) {
+        st.state[i] = StaffState.Working;
+        st.timer[i] = 1.5;
+        return;
+      }
+    } else if (st.state[i] === StaffState.Heading) {
+      const b = this.buildings.get(st.target[i] as number);
+      if (!b) {
+        st.state[i] = StaffState.Patrolling;
+      } else if (b.dist[k] === 0) {
+        st.state[i] = StaffState.Working;
+        st.timer[i] = st.repair[i] ? 5 : 3;
+        return;
+      }
+    }
+
+    // Choose the next tile.
+    let dir = -1;
+    if (st.kind[i] === StaffKind.Handyman && (this.dirtMap[k] as number) <= SWEEP_RANGE) {
+      dir = this.downhill(this.dirtMap, tx, ty);
+    } else if (st.state[i] === StaffState.Heading) {
+      const b = this.buildings.get(st.target[i] as number);
+      if (b) dir = this.downhill(b.dist, tx, ty);
+    }
+    if (dir < 0) dir = this.staffWander(i, tx, ty);
+    if (dir < 0) return;
+    const d = DIRS[dir] as readonly [number, number];
+    st.toX[i] = tx + d[0];
+    st.toY[i] = ty + d[1];
+    st.progress[i] = Math.min(p - 1, 0.99);
+  }
+
+  /** A random neighbouring path tile, as a DIRS index, or -1. */
+  private staffWander(i: number, tx: number, ty: number): number {
+    const st = this.staff;
+    const choices: number[] = [];
+    for (let d = 0; d < 4; d++) {
+      const dir = DIRS[d] as readonly [number, number];
+      if (isPath(this.world, tx + dir[0], ty + dir[1])) choices.push(d);
+    }
+    if (choices.length === 0) return -1;
+    return choices[Math.floor(st.random(i) * choices.length)] as number;
+  }
+
+  private finishJob(i: number): void {
+    const st = this.staff;
+    const w = this.world;
+    st.state[i] = StaffState.Patrolling;
+    if (st.kind[i] === StaffKind.Handyman) {
+      const k = (st.toY[i] as number) * w.width + (st.toX[i] as number);
+      if (this.dirt(k) > 0) this.swept++;
+      this.litter[k] = 0;
+      this.vomit[k] = 0;
+      this.binFill[k] = 0;
+      st.jobs[i] = (st.jobs[i] as number) + 1;
+      return;
+    }
+    const b = this.buildings.get(st.target[i] as number);
+    st.target[i] = 0;
+    if (!b) return;
+    b.mechanic = 0;
+    if (b.broken) {
+      b.broken = false;
+      b.timer = 0;
+      b.reliability = Math.min(100, b.reliability + 30);
+      this.repairs++;
+      this.events.push({ kind: 'fixed', id: b.def.id });
+    } else {
+      b.reliability = Math.min(100, b.reliability + 20);
+    }
+    st.jobs[i] = (st.jobs[i] as number) + 1;
   }
 
   private averages(): GuestAverages {

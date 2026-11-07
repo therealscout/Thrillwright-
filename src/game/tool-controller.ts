@@ -31,6 +31,8 @@ export const TOOLS: ToolInfo[] = [
   { id: 'path', label: 'Path', hint: 'Click and drag to lay footpath', key: '5', paints: true, usesBrush: true },
   { id: 'remove-path', label: 'Remove path', hint: 'Click and drag to remove footpath', key: '6', paints: true, usesBrush: true },
   { id: 'buy-land', label: 'Buy land', hint: 'Click and drag to buy land next to your park', key: '7', paints: true, usesBrush: true },
+  { id: 'bin', label: 'Bin', hint: 'Click a path to put a litter bin on it', key: '8', paints: true, usesBrush: false },
+  { id: 'bench', label: 'Bench', hint: 'Click a path to put a bench on it; tired guests rest here', key: '9', paints: true, usesBrush: false },
   { id: 'build', label: 'Build', hint: 'Click to place. R rotates the entrance; face it onto a path', key: 'b', paints: false, usesBrush: false },
   { id: 'coaster', label: 'Coaster builder', hint: 'Click flat land for the station. R turns it', key: 'c', paints: false, usesBrush: false },
 ];
@@ -71,6 +73,8 @@ export class ToolController {
   private facing: Facing = 2;
   private selected: number | null = null;
   private readonly listeners = new Set<(s: ToolState) => void>();
+  /** Called with the clicked tile when the Look tool hits no building (null to close the guest window). */
+  onPickGuest: ((tile: TileCoord | null) => void) | null = null;
 
   constructor(
     private readonly park: Park,
@@ -180,7 +184,10 @@ export class ToolController {
   pointer(kind: 'down' | 'move' | 'up', tile: TileCoord | null): void {
     this.hovered = tile;
     if (kind === 'down' && tile && this.tool === 'inspect') {
-      this.select(buildingAt(this.park.buildings, tile)?.id ?? null);
+      const id = buildingAt(this.park.buildings, tile)?.id ?? null;
+      this.select(id);
+      // Nothing built here: maybe the player clicked a guest.
+      this.onPickGuest?.(id === null ? tile : null);
     } else if (kind === 'down' && tile && this.tool === 'build') {
       this.place(tile);
     } else if (kind === 'down' && tile && this.tool === 'coaster') {

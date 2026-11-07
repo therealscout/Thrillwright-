@@ -11,6 +11,8 @@ const paths: Record<ToolId, string> = {
   'remove-path': 'M8 21L10 3M16 21L14 3M5 8l14 8M19 8L5 16',
   'buy-land': 'M4 20V9l8-5 8 5v11zM9 20v-6h6v6M12 9v.01',
   build: 'M3 21h18M5 21V11l7-7 7 7v10M9 21v-5h6v5M3 11l9-8 9 8',
+  bin: 'M6 7h12M9 7V4h6v3M7 7l1 13h8l1-13M10 11v6M14 11v6',
+  bench: 'M3 11h18M4 15h16M6 15v4M18 15v4M5 11V7h14v4',
   coaster: 'M2 18c3 0 4-12 8-12s3 8 6 8 3-4 6-4M5 19v-5M10 19V8M15 19v-5M20 19v-7',
 };
 
@@ -18,6 +20,14 @@ export function ToolIcon({ tool }: { tool: ToolId }) {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d={paths[tool]} />
+    </svg>
+  );
+}
+
+export function StaffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 3a3 3 0 1 1 0 6a3 3 0 0 1 0-6zM6 21v-4a6 6 0 0 1 12 0v4M8 6h8" />
     </svg>
   );
 }
