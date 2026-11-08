@@ -132,7 +132,14 @@ export function buildPathGeometry(t: Terrain): THREE.BufferGeometry {
       const kind = kindAt(tx, ty);
       if (!kind) continue;
       // Paving joins neighbours of the same kind: queue lines read as their own lanes.
-      const isPath = (x: number, y: number) => kindAt(x, y) === kind;
+      // Queue tiles only join the queue tiles they're linked to.
+      const links = t.queueLinks[tileIndex(t, tx, ty)] as number;
+      const isPath = (x: number, y: number) => {
+        if (kindAt(x, y) !== kind) return false;
+        if (kind !== 2) return true;
+        const side = y < ty ? 0 : x > tx ? 1 : y > ty ? 2 : 3;
+        return ((links >> side) & 1) === 1;
+      };
       const h = tileCorners(t, tx, ty);
       // Kerb: the full tile, slightly lifted.
       pushTile(positions, cornerPoints(tx, ty, h, 0.03), h);

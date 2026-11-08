@@ -7,6 +7,7 @@
  * pointer to the most recent so the menu can offer "Continue".
  */
 import { createTerrain, type Terrain } from '../core/terrain';
+import { linkAllQueues } from '../core/terrain-edit';
 import type { ResearchCategory } from '../core/research';
 import type { Outcome } from './goals';
 import type { CampaignId, Management, MonthAccount } from './management';
@@ -29,6 +30,8 @@ export interface SaveGame {
     owned: string;
     blocked: string;
     items: string;
+    /** Added later: older saves link every pair of touching queue tiles. */
+    queueLinks?: string;
   };
   park: ParkState;
   management: {
@@ -96,6 +99,7 @@ export function makeSave(input: {
   const t = park.terrain;
   const terrain = { width: t.width, height: t.height } as SaveGame['terrain'];
   for (const layer of LAYERS) terrain[layer] = packBytes(t[layer]);
+  terrain.queueLinks = packBytes(t.queueLinks);
   const d = m.date;
   return {
     version: SAVE_VERSION,
@@ -129,6 +133,8 @@ export function terrainFromSave(save: SaveGame): Terrain {
     const target = t[layer];
     target.set(unpackBytes(save.terrain[layer], target.length));
   }
+  if (save.terrain.queueLinks) t.queueLinks.set(unpackBytes(save.terrain.queueLinks, t.queueLinks.length));
+  else linkAllQueues(t);
   return t;
 }
 

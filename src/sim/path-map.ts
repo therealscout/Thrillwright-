@@ -11,6 +11,8 @@ export interface PathGrid {
   readonly height: number;
   /** 1 where a tile has a footpath. */
   readonly paths: Uint8Array;
+  /** Queue tiles' links to their neighbours (bits N, E, S, W). Without it, touching queue tiles join. */
+  readonly queueLinks?: Uint8Array;
 }
 
 /** Neighbour offsets in order N, E, S, W. */

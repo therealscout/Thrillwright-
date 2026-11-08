@@ -110,7 +110,10 @@ weather.onChange((kind) => {
   if (kind === 'rain') tools.notify('It has started to rain. Fewer visitors will come until it stops.', 'info');
   sim.setConfig(parkDemand());
 });
-sim.onStats((s) => audio.setAmbience(s.guests, weather.rain));
+sim.onStats((s) => {
+  audio.setAmbience(s.guests, weather.rain);
+  audio.setNight(game.night);
+});
 
 // Sounds for things happening in the park.
 park.onLedger((category, amount) => {

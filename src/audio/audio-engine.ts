@@ -6,7 +6,7 @@
  * Browsers only allow sound after the player has clicked or pressed a key,
  * so the engine starts on the first gesture.
  */
-import { BEATS_PER_BAR, composeBar, midiToHz, secondsPerBeat, type Note } from './music';
+import { composeBar, midiToHz, nextTune, STYLES, TUNE_BARS, type Note, type StyleId } from './music';
 
 export type Sfx = 'click' | 'build' | 'coins' | 'error' | 'unlock' | 'win' | 'lose' | 'breakdown' | 'fixed';
 
@@ -51,8 +51,10 @@ export class AudioEngine {
   private rainGain!: GainNode;
   private nextBarTime = 0;
   private bar = 0;
-  private readonly seed = Math.floor(Math.random() * 1e9);
+  /** The tune playing now: its style, key (semitones from C) and seed. */
+  private tune: { style: StyleId; key: number; seed: number } = { style: 'waltz', key: 0, seed: Math.floor(Math.random() * 1e9) };
   private readonly melody = { melody: 7 };
+  private night = false;
   private timer: number | null = null;
   private lastSfx = new Map<Sfx, number>();
   private readonly listeners = new Set<() => void>();
@@ -101,6 +103,16 @@ export class AudioEngine {
     saveAudioSettings(this.settings);
     this.applySettings();
     this.emit();
+  }
+
+  /** Night brings the occasional quiet music-box tune. */
+  setNight(amount: number): void {
+    this.night = amount > 0.5;
+  }
+
+  /** The style of the tune playing now, e.g. "Oom-pah march". */
+  get tuneName(): string {
+    return STYLES[this.tune.style].name;
   }
 
   /** Background sound: the crowd grows with guests, the rain with the weather. */
@@ -190,13 +202,24 @@ export class AudioEngine {
   private schedule(): void {
     const ctx = this.ctx;
     if (!ctx) return;
-    const beat = secondsPerBeat();
     if (this.nextBarTime < ctx.currentTime) this.nextBarTime = ctx.currentTime + 0.05;
     while (this.nextBarTime < ctx.currentTime + 0.5) {
-      if (this.settings.music > 0 && !this.settings.muted) {
-        for (const n of composeBar(this.seed, this.bar, this.melody)) this.playNote(n, this.nextBarTime + n.beat * beat, beat);
+      // At the end of each tune, a short rest and then something different.
+      if (this.bar >= TUNE_BARS) {
+        this.tune = nextTune(this.tune.style, this.night, Math.random);
+        this.bar = 0;
+        this.melody.melody = 7;
+        this.nextBarTime += 1.5;
+        this.emit();
       }
-      this.nextBarTime += BEATS_PER_BAR * beat;
+      const style = STYLES[this.tune.style];
+      const beat = 60 / style.tempo;
+      if (this.settings.music > 0 && !this.settings.muted) {
+        for (const n of composeBar(this.tune.seed, this.bar, this.melody, this.tune.style)) {
+          this.playNote({ ...n, midi: n.midi + this.tune.key }, this.nextBarTime + n.beat * beat, beat);
+        }
+      }
+      this.nextBarTime += style.beatsPerBar * beat;
       this.bar++;
     }
   }
@@ -218,6 +241,28 @@ export class AudioEngine {
         break;
       case 'bell':
         this.tone(this.musicBus, hz, at, len, 'sine', 0.25 * n.velocity, undefined, undefined, true);
+        break;
+      case 'brass':
+        // A bright horn: a filtered sawtooth.
+        this.tone(this.musicBus, hz, at, len, 'sawtooth', 0.07 * n.velocity, undefined, 1800);
+        break;
+      case 'tuba':
+        this.tone(this.musicBus, hz, at, len, 'sawtooth', 0.16 * n.velocity, undefined, 500);
+        break;
+      case 'marimba':
+        // A struck bar: a sine that dies away, with a hint of its fourth harmonic.
+        this.tone(this.musicBus, hz, at, Math.max(len, 0.5), 'sine', 0.3 * n.velocity, undefined, undefined, true);
+        this.tone(this.musicBus, hz * 4, at, 0.12, 'sine', 0.04 * n.velocity, undefined, undefined, true);
+        break;
+      case 'piano':
+        this.tone(this.musicBus, hz, at, Math.max(len, 0.4), 'triangle', (n.midi < 50 ? 0.35 : 0.16) * n.velocity, undefined, 3000, true);
+        break;
+      case 'musicbox':
+        this.tone(this.musicBus, hz * 2, at, Math.max(len, 0.8), 'sine', 0.16 * n.velocity, undefined, undefined, true);
+        break;
+      case 'pad':
+        // Soft and held, for the night tune.
+        this.tone(this.musicBus, hz, at, len, 'sine', (n.midi < 50 ? 0.22 : 0.05) * n.velocity);
         break;
     }
   }

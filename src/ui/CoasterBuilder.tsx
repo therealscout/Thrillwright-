@@ -2,6 +2,7 @@ import { coasterType } from '../core/coaster-types';
 import type { BuilderState, CoasterEditor } from '../game/coaster-editor';
 import { STATION_LENGTH } from '../core/track';
 import { money, rating } from './format';
+import { riderShare } from '../core/pricing';
 
 const DIRS = ['north', 'east', 'south', 'west'];
 
@@ -150,6 +151,7 @@ export function CoasterBuilder({ editor, state, onPlaceStation, onMessage }: Pro
                 <dl data-testid="coaster-ratings">
                   <dt>Excitement</dt><dd>{rating(ratings.excitement)}</dd>
                   <dt>Intensity</dt><dd>{rating(ratings.intensity)}</dd>
+                  <dt>Brave enough</dt><dd>{Math.round(riderShare(ratings.intensity) * 100)}% of guests</dd>
                   <dt>Nausea</dt><dd>{rating(ratings.nausea)}</dd>
                   <dt>Top speed</dt><dd>{Math.round(ratings.maxSpeed * 3.6)} km/h</dd>
                   <dt>Length</dt><dd>{ratings.length} m</dd>
@@ -158,6 +160,12 @@ export function CoasterBuilder({ editor, state, onPlaceStation, onMessage }: Pro
                   <dt>Drops</dt><dd>{ratings.drops} (highest {Math.round(ratings.highestDrop)} m)</dd>
                   <dt>Inversions</dt><dd>{ratings.inversions}</dd>
                 </dl>
+              )}
+              {ratings && riderShare(ratings.intensity) < 0.4 && (
+                <p class="note warn" data-testid="coaster-too-intense">
+                  Only {Math.round(riderShare(ratings.intensity) * 100)}% of guests are brave enough for this. The biggest causes are{' '}
+                  {ratings.maxLateralG > 2 ? 'sharp turns at speed (try banked turns or slow down first)' : ratings.maxPositiveG > 4 ? 'hard pull-outs at the bottom of drops and loops' : 'a very fast, tall layout'}.
+                </p>
               )}
             </>
           )}

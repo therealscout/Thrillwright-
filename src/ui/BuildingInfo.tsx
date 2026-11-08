@@ -1,7 +1,7 @@
 import type { Building } from '../core/buildings';
 import { buildingType } from '../core/catalog';
 import { seatsFor } from '../core/coaster-types';
-import { suggestedTicket } from '../core/pricing';
+import { riderShare, suggestedTicket } from '../core/pricing';
 import type { BuildingStats } from '../sim/sim-core';
 import { count, money, price, rating } from './format';
 
@@ -39,7 +39,7 @@ export function BuildingInfo({ building, stats, onPrice, sameType, onPriceAll, o
           ? 'Loading'
           : 'Waiting for riders'
       : 'Open';
-  const hints = isRide && building.open && stats && !stats.broken ? rideHints(stats, building.price, excitement ?? 0) : [];
+  const hints = isRide && building.open && stats && !stats.broken ? rideHints(stats, building.price, excitement ?? 0, intensity ?? 0) : [];
   return (
     <aside class="panel info" aria-label={`${type.name} details`} data-testid="building-info">
       <div class="panel-head">
@@ -66,6 +66,7 @@ export function BuildingInfo({ building, stats, onPrice, sameType, onPriceAll, o
           <>
             <dt>Excitement</dt><dd data-testid="info-excitement">{rating(excitement)}</dd>
             <dt>Intensity</dt><dd>{rating(intensity)}</dd>
+            <dt>Brave enough</dt><dd data-testid="info-share">{Math.round(riderShare(intensity ?? 0) * 100)}% of guests</dd>
             <dt>Nausea</dt><dd>{rating(nausea)}</dd>
             {r && (
               <>
@@ -74,7 +75,7 @@ export function BuildingInfo({ building, stats, onPrice, sameType, onPriceAll, o
                 <dt>Inversions</dt><dd>{r.inversions}</dd>
               </>
             )}
-            <dt>In queue</dt><dd data-testid="info-queue">{count.format(stats?.queue ?? 0)}</dd>
+            <dt>In queue</dt><dd><span data-testid="info-queue">{count.format(stats?.queue ?? 0)}</span>{stats?.room ? ` of ${count.format(stats.room)}` : ""}</dd>
             <dt>Wait</dt><dd>{waitText(stats?.queue ?? 0, r ? seatsFor(building.coaster?.type) : type.capacity ?? 1, r ? r.duration + 4 : type.cycle ?? 30)}</dd>
             <dt>Capacity</dt><dd>{capacity}</dd>
             <dt>Reliability</dt><dd data-testid="info-reliability">{stats?.reliability ?? 100}%</dd>
@@ -125,7 +126,7 @@ interface Hint {
 }
 
 /** Plain reasons a ride is quiet, from what guests have been deciding about it. */
-export function rideHints(stats: BuildingStats, ticket: number, excitement: number): Hint[] {
+export function rideHints(stats: BuildingStats, ticket: number, excitement: number, intensity = 0): Hint[] {
   const hints: Hint[] = [];
   if (!stats.reachable) {
     hints.push({ text: "Guests can't reach the entrance. Join a path to the entrance sign." });
@@ -137,11 +138,17 @@ export function rideHints(stats: BuildingStats, ticket: number, excitement: numb
   if (r.price >= 5 && ticket > fair) {
     hints.push({ text: `Guests think the ticket is too dear for a ride this exciting. Most will pay ${price.format(fair)}.`, price: fair });
   }
-  // Some guests always find a coaster too much; only mention it when the ride is quiet.
-  if (r.intense >= 5 && stats.queue < 8) {
-    hints.push({ text: 'Too intense for many guests. Gentler drops, slower turns or fewer loops would bring more riders.' });
+  // Some guests always find a coaster too much; say so when it keeps most of them away.
+  const share = riderShare(intensity);
+  if (r.intense >= 5 && (share < 0.5 || stats.queue < 8)) {
+    hints.push({
+      text: `Too intense for ${Math.round((1 - share) * 100)}% of guests. Gentler drops, wider or banked turns and fewer loops would bring more riders.`,
+    });
   }
-  if (r.queue >= 5) hints.push({ text: 'The queue is so long that guests are giving up on it.' });
+  if ((r.dull ?? 0) >= 5 && stats.queue < 8) {
+    hints.push({ text: "Guests don't think it's worth the walk or the ticket. A more exciting ride, a lower price or a spot nearer the crowds would help." });
+  }
+  if (r.queue >= 5) hints.push({ text: 'The queue is full, so guests are giving up on it. A longer queue line holds more of them.' });
   return hints;
 }
 

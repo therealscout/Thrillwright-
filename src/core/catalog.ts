@@ -57,6 +57,26 @@ export const CATALOG: BuildingType[] = [
     excitement: 5.8, intensity: 7.5, nausea: 3.6, capacity: 12, cycle: 30,
   },
   {
+    id: 'bumper-cars', name: 'Bumper Cars', kind: 'ride', size: 3, cost: 1300, price: 2,
+    description: 'Little electric cars, a big rubber bumper, and no rules about steering.',
+    excitement: 3.9, intensity: 2.2, nausea: 0.8, capacity: 12, cycle: 40,
+  },
+  {
+    id: 'ghost-manor', name: 'Ghost Manor', kind: 'ride', size: 3, cost: 1700, price: 3,
+    description: 'A slow ride through a creaky old house. More giggles than screams.',
+    excitement: 4.3, intensity: 1.8, nausea: 0.5, capacity: 16, cycle: 50,
+  },
+  {
+    id: 'swinging-galleon', name: 'Swinging Galleon', kind: 'ride', size: 3, cost: 2000, price: 3,
+    description: 'A big wooden boat that swings higher and higher until it nearly tips over.',
+    excitement: 5.0, intensity: 5.3, nausea: 4.2, capacity: 20, cycle: 40,
+  },
+  {
+    id: 'whirlwind', name: 'Whirlwind', kind: 'ride', size: 3, cost: 2300, price: 4,
+    description: 'A ring of gondolas spins fast, then tilts up on its side.',
+    excitement: 5.4, intensity: 6.3, nausea: 6.0, capacity: 16, cycle: 35,
+  },
+  {
     id: 'steel-coaster', name: 'Steel Coaster', kind: 'ride', size: 1, cost: 0, price: 5, custom: true,
     description: 'Design your own track: lift hills, drops, turns and loops. Priced per piece.',
   },
@@ -95,6 +115,22 @@ export const CATALOG: BuildingType[] = [
   {
     id: 'coffee-kiosk', name: 'Coffee Kiosk', kind: 'drink', size: 1, cost: 300, price: 2,
     description: 'Hot drinks that perk tired guests up.', satisfies: 120,
+  },
+  {
+    id: 'hot-dog-cart', name: 'Hot Dog Cart', kind: 'food', size: 1, cost: 250, price: 3,
+    description: 'A quick, filling bite.', satisfies: 130,
+  },
+  {
+    id: 'pizza-stand', name: 'Pizza Slice Stand', kind: 'food', size: 1, cost: 350, price: 3,
+    description: 'Big cheesy slices. Very filling.', satisfies: 170,
+  },
+  {
+    id: 'candy-floss', name: 'Candy Floss Cart', kind: 'food', size: 1, cost: 200, price: 2,
+    description: 'Spun sugar on a stick. Kids love it.', satisfies: 60,
+  },
+  {
+    id: 'smoothie-bar', name: 'Smoothie Bar', kind: 'drink', size: 1, cost: 350, price: 3,
+    description: 'Fruit smoothies. Pricier, but they really hit the spot.', satisfies: 190,
   },
   {
     id: 'restrooms', name: 'Restrooms', kind: 'toilet', size: 1, cost: 400, price: 0,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_HEIGHT, cornerHeight, createTerrain, isPathable, tileCorners, tileIndex, type Terrain } from './terrain';
-import { MAX_SLOPE, brushTiles, buyLand, moveLand, moveWater, placePath, removePath } from './terrain-edit';
+import { BASE_HEIGHT, PathItem, cornerHeight, createTerrain, isPathable, tileCorners, tileIndex, type Terrain } from './terrain';
+import { MAX_SLOPE, brushTiles, buyLand, moveLand, moveWater, placeItem, placePath, removePath } from './terrain-edit';
 import { COSTS } from './costs';
 
 const RICH = 1_000_000;
@@ -129,5 +129,18 @@ describe('paths and land', () => {
     const t = createTerrain(4, 4);
     expect(buyLand(t, [{ tx: 0, ty: 0 }], RICH)).toEqual({ ok: true, cost: COSTS.landPurchase });
     expect(buyLand(t, [{ tx: 0, ty: 0 }], RICH).ok).toBe(false);
+  });
+});
+
+describe('bins and benches', () => {
+  it('lets one path tile hold a bin and a bench', () => {
+    const t = createTerrain(4, 4);
+    t.owned.fill(1);
+    placePath(t, [{ tx: 1, ty: 1 }], 1e6);
+    const k = tileIndex(t, 1, 1);
+    expect(placeItem(t, [{ tx: 1, ty: 1 }], PathItem.Bench, 1e6).ok).toBe(true);
+    expect(placeItem(t, [{ tx: 1, ty: 1 }], PathItem.Bin, 1e6).ok).toBe(true);
+    expect(t.items[k]).toBe(PathItem.Bin | PathItem.Bench);
+    expect(placeItem(t, [{ tx: 1, ty: 1 }], PathItem.Bin, 1e6).reason).toContain('already a bin');
   });
 });

@@ -108,11 +108,16 @@ export class PathLayer {
           if (open) { side = s; break; }
         }
         const [sx, sy] = SIDES[side] as readonly [number, number];
-        if (item === PathItem.Bin) {
-          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.4 + sy * 0.3, y, ty + 0.5 + sy * 0.4 - sx * 0.3);
+        // With both on one tile, the bench moves aside to make room for the bin.
+        const both = (item & PathItem.Bin) && (item & PathItem.Bench);
+        if (item & PathItem.Bin) {
+          const along = both ? 0.36 : 0.3;
+          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.4 + sy * along, y, ty + 0.5 + sy * 0.4 - sx * along);
           bins.push(new THREE.Matrix4().compose(pos, q.identity(), one));
-        } else if (item === PathItem.Bench) {
-          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.38, y, ty + 0.5 + sy * 0.38);
+        }
+        if (item & PathItem.Bench) {
+          const shift = both ? -0.12 : 0;
+          const pos = new THREE.Vector3(tx + 0.5 + sx * 0.38 + sy * shift, y, ty + 0.5 + sy * 0.38 - sx * shift);
           // Face the middle of the path: the bench's back goes on the outside.
           const rot = new THREE.Quaternion().setFromAxisAngle(up, Math.atan2(-sx, -sy));
           benches.push(new THREE.Matrix4().compose(pos, rot, one));
@@ -124,7 +129,7 @@ export class PathLayer {
     this.syncQueueRails(t);
   }
 
-  /** Railings along queue lines, open where they meet a path or the ride. */
+  /** Railings along queue lines, open where they meet a path or the ride, and between joined tiles. */
   private syncQueueRails(t: Terrain): void {
     const rails: THREE.Matrix4[] = [];
     const posts: THREE.Matrix4[] = [];
@@ -139,7 +144,11 @@ export class PathLayer {
           const nx = tx + dx, ny = ty + dy;
           const inside = nx >= 0 && ny >= 0 && nx < t.width && ny < t.height;
           const n = inside ? tileIndex(t, nx, ny) : -1;
-          if (n >= 0 && (t.paths[n] || t.blocked[n])) continue;
+          const links = t.queueLinks[tileIndex(t, tx, ty)] as number;
+          if (n >= 0 && t.blocked[n]) continue;
+          // Open to the queue tiles it joins, and to a path only at the ends of the line.
+          if (n >= 0 && t.paths[n] === 2 && (links >> s) & 1) continue;
+          if (n >= 0 && t.paths[n] === 1 && bitCount(links) < 2) continue;
           // A rail along this edge, just inside the tile.
           const cx = tx + 0.5 + dx * 0.44;
           const cz = ty + 0.5 + dy * 0.44;
@@ -187,4 +196,8 @@ export class PathLayer {
     this.litter.set(bits, colours);
     this.vomit.set(blobs);
   }
+}
+
+function bitCount(v: number): number {
+  return (v & 1) + ((v >> 1) & 1) + ((v >> 2) & 1) + ((v >> 3) & 1);
 }
